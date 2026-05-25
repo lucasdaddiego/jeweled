@@ -6,13 +6,14 @@
 //
 // Bump CACHE on every deploy so old caches are swept on activate.
 
-const CACHE = 'gem-match-v31';
+const CACHE = 'gem-match-v32';
 
 const PRECACHE = [
   '/',
   '/index.html',
   '/style.css',
   '/manifest.json',
+  '/favicon.svg',
   '/src/main.js',
   '/src/config.js',
   '/src/grid.js',
@@ -74,7 +75,7 @@ const PRECACHE = [
 // outside the whitelist passes through without populating the cache — keeps
 // quota predictable and avoids accidentally pinning stale third-party data.
 const CACHEABLE_PREFIXES = ['/src/', '/icons/'];
-const CACHEABLE_EXACT = new Set(['/', '/index.html', '/style.css', '/manifest.json']);
+const CACHEABLE_EXACT = new Set(['/', '/index.html', '/style.css', '/manifest.json', '/favicon.svg']);
 
 function isCacheable(pathname) {
   if (CACHEABLE_EXACT.has(pathname)) return true;

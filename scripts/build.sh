@@ -20,7 +20,7 @@ rm -rf dist
 mkdir -p dist
 
 # Files at the publish root.
-cp index.html style.css manifest.json sw.js _headers dist/
+cp index.html style.css manifest.json sw.js _headers favicon.svg dist/
 
 # Directories — copy recursively, preserving the layout the service worker's
 # precache list (sw.js) and runtime fetch URLs depend on.

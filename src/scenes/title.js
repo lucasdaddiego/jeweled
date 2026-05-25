@@ -43,17 +43,23 @@ export function draw() {
   const profile = state.profile;
 
   const btnW = Math.min(360, w - 40);
-  const btnH = render.layout.isNarrow ? 56 : 62;
-  const btnGap = 10;
   const last = profile.lastPlayedMode;
   const continueState = last && state[last] && state[last].saveState ? state[last].saveState : null;
   const buttonCount = (continueState ? 1 : 0) + 5;
 
-  // Heatmap geometry (12 weeks × 7 days, 14px cells with 3px gaps)
-  const hmCell = 14, hmGap = 3, hmWeeks = 12, hmDays = 7;
+  // Short-viewport mode: tighten everything so the heatmap doesn't get
+  // clipped at the bottom edge on laptop/landscape windows.
+  const isShort = h < 720;
+  const btnH = isShort ? 52 : (render.layout.isNarrow ? 56 : 62);
+  const btnGap = isShort ? 8 : 10;
+
+  // Heatmap geometry (12 weeks × 7 days)
+  const hmCell = isShort ? 11 : 14;
+  const hmGap = isShort ? 2 : 3;
+  const hmWeeks = 12, hmDays = 7;
   const hmW = hmWeeks * (hmCell + hmGap) - hmGap;
   const hmH = hmDays * (hmCell + hmGap) - hmGap;
-  const labelH = 24; // "streak" text below
+  const labelH = isShort ? 20 : 24; // "streak" text below
 
   // Vertical block sizes
   const titleH = 56;
@@ -61,11 +67,12 @@ export function draw() {
   const titleBlockH = titleH + (needsNameEntry ? 0 : welcomeH);
   const buttonsH = buttonCount * btnH + (buttonCount - 1) * btnGap;
   const heatmapBlockH = hmH + labelH;
-  const preButtonsGap = 24;     // was 36 — title → buttons
-  const preHeatmapGap = 20;     // was 40 — buttons → heatmap
+  const preButtonsGap = isShort ? 16 : 24;
+  const preHeatmapGap = isShort ? 14 : 20;
 
   const totalH = titleBlockH + preButtonsGap + buttonsH + preHeatmapGap + heatmapBlockH;
-  let y = Math.max(40, Math.floor((h - totalH) / 2));
+  const minTop = isShort ? 20 : 40;
+  let y = Math.max(minTop, Math.floor((h - totalH) / 2));
 
   const titleFontPx = render.layout.isNarrow ? 36 : 48;
   // 'GEM MATCH' kept as the brand chip — not translated.
@@ -158,12 +165,23 @@ export function draw() {
   // Heatmap, centered horizontally
   drawHeatmap(state.playHistory, Math.floor((w - hmW) / 2), y, hmWeeks, hmDays, hmCell, hmGap);
 
-  // Stats + Settings icons (top-right corner, near the title rather than the
-  // far bottom of the viewport so they read as part of the menu group).
+  // Stats + Settings icons. On wide viewports, anchor near the right edge of
+  // the menu column (with a small outset) so they read as part of the menu
+  // group instead of floating off in the far corner. On narrow viewports
+  // (mobile), stay in the top-right corner.
   const sw = 44;
   const iconY = 16;
-  drawHitButton(w - sw * 2 - 24, iconY, sw, sw, '📊', () => setScene('stats'));
-  drawHitButton(w - sw - 16,     iconY, sw, sw, '⚙', () => { settingsOpen = !settingsOpen; });
+  let settingsX, statsX;
+  if (w >= 720) {
+    const rightX = w / 2 + btnW / 2 + 60;
+    settingsX = rightX - sw;
+    statsX = settingsX - 10 - sw;
+  } else {
+    settingsX = w - sw - 16;
+    statsX = settingsX - 8 - sw;
+  }
+  drawHitButton(statsX,    iconY, sw, sw, '📊', () => setScene('stats'));
+  drawHitButton(settingsX, iconY, sw, sw, '⚙', () => { settingsOpen = !settingsOpen; });
 
   if (settingsOpen) drawSettingsOverlay();
 }
