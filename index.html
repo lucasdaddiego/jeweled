@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#7c3aed">
+  <meta name="description" content="A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.">
+  <title>Gem Match</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <canvas id="game" role="application" aria-label="Gem Match game board"></canvas>
+  <!-- Screen-reader live region. The game canvas is opaque to assistive tech;
+       game scenes can push score / level-up announcements into #sr-live to
+       give assistive users at least basic state awareness. -->
+  <div id="sr-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <div id="boot-splash">
+    <div class="boot-gem"></div>
+    <div class="boot-title">GEM MATCH</div>
+    <div class="boot-dots"><span></span><span></span><span></span></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

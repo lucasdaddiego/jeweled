@@ -1,0 +1,14 @@
+# Cloudflare Pages publish output. Built by scripts/build.sh; never committed.
+dist/
+
+# Local Claude Code harness config (launch settings, per-machine permission
+# allowlist). Tracked outside the repo since it's editor/agent-tooling, not
+# app code or shared project state.
+.claude/
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo

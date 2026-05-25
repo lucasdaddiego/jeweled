@@ -1,0 +1,20 @@
+{
+  "id": "/?source=pwa",
+  "name": "Gem Match",
+  "short_name": "GemMatch",
+  "description": "A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.",
+  "categories": ["games", "puzzles"],
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#0e0a1f",
+  "theme_color": "#7c3aed",
+  "orientation": "any",
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
