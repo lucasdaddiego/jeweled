@@ -51,6 +51,28 @@ function defaultState() {
   };
 }
 
+// Forward migrations. Each entry transforms a blob written at version N
+// into the shape expected at version N+1. Keep them pure (no Date.now, no
+// RNG) so they replay deterministically from the :v{N}:archive backup.
+// Additive changes — new leaf keys with defaults — don't need an entry;
+// deepMerge handles those without a version bump.
+const MIGRATIONS = {
+  // 1: (v1) => ({ ...v1, /* v2 shape */ }),
+};
+
+function migrate(blob, fromVersion) {
+  let v = fromVersion;
+  let out = blob;
+  while (v < STORAGE_VERSION) {
+    const step = MIGRATIONS[v];
+    if (!step) throw new Error(`no migration from v${v} to v${v + 1}`);
+    out = step(out);
+    v++;
+    out.version = v;
+  }
+  return out;
+}
+
 let cache = null;
 
 export function load() {
@@ -66,17 +88,33 @@ export function load() {
       return cache;
     }
     const parsed = JSON.parse(raw);
-    if (!parsed.version || parsed.version !== STORAGE_VERSION) {
-      // Schema mismatch — archive the old payload so a future migration can
-      // recover from it, then reset to defaults.
-      try { localStorage.setItem(`${STORAGE_KEY}:v${parsed.version || 0}:archive`, raw); }
-      catch { /* quota — fine, we tried */ }
+    const fromVersion = Number(parsed.version) || 0;
+    if (fromVersion > STORAGE_VERSION) {
+      // Stale client meeting a newer save (e.g. user opened a cached tab
+      // after a deploy that bumped the version). Don't migrate backwards
+      // and don't overwrite — run on in-memory defaults this session so
+      // the newer blob survives untouched for the next reload.
       cache = defaultState();
-      saveAll();
       return cache;
     }
-    // Merge with defaults so newly-added keys are present
-    cache = deepMerge(defaultState(), parsed);
+    let blob = parsed;
+    if (fromVersion < STORAGE_VERSION) {
+      try { localStorage.setItem(`${STORAGE_KEY}:v${fromVersion}:archive`, raw); }
+      catch { /* quota — fine, we tried */ }
+      try {
+        blob = migrate(parsed, fromVersion);
+      } catch (err) {
+        console.warn('storage.migrate failed, resetting:', err);
+        cache = defaultState();
+        saveAll();
+        return cache;
+      }
+    }
+    // deepMerge fills any leaf keys that were added since the blob was
+    // written. Additive changes don't need a version bump — bump only for
+    // renames/removals/restructures handled by MIGRATIONS.
+    cache = deepMerge(defaultState(), blob);
+    if (fromVersion < STORAGE_VERSION) saveAll();
     return cache;
   } catch (err) {
     console.warn('storage.load failed, resetting:', err);
