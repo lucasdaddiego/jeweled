@@ -1,5 +1,5 @@
 {
-  "name": "gem-match",
+  "name": "jeweled",
   "compatibility_date": "2026-05-23",
   // Publish only the files in dist/ — populated by scripts/build.sh. This keeps
   // dev tooling (.claude/, scripts/, emoji-sample.html) out of the public

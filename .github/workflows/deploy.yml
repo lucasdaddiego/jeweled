@@ -1,0 +1,56 @@
+# Deploys dist/ to the Cloudflare Pages project "jeweled" on every push to
+# main (and on manual dispatch). The service worker cache key is rotated to
+# include the commit SHA so each deploy invalidates stale caches on
+# activate() — see sw.js header for why network-first + per-deploy rotation.
+
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build (copy sources into dist/)
+        run: bash scripts/build.sh
+
+      # Rotate dist/sw.js cache key. GNU sed (ubuntu-latest); on macOS this
+      # would need `sed -i ''`. The grep guard fails the build loudly if a
+      # future sw.js refactor breaks the regex anchor.
+      - name: Bump service worker cache version
+        run: |
+          set -euo pipefail
+          SHA8="${GITHUB_SHA::8}"
+          sed -i "s/^const CACHE = 'gem-match-v\([0-9]*\)';$/const CACHE = 'gem-match-v\1-${SHA8}';/" dist/sw.js
+          grep -q "^const CACHE = 'gem-match-v[0-9]*-${SHA8}';$" dist/sw.js || {
+            echo "::error::SW cache version bump did not apply. Check sw.js line 9 format."
+            exit 1
+          }
+          echo "SW cache key: $(grep "^const CACHE" dist/sw.js)"
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '3'
+          command: pages deploy dist --project-name=jeweled --branch=main
