@@ -46,8 +46,12 @@ export const layout = {
   hudY: 16,           // y of the HUD content start
   hudRowH: 28,        // vertical spacing of HUD rows
   isNarrow: false,    // viewport < 480px width
-  panelW: 0,          // reserved column on right for power-up panel (0 = none)
-  panelX: 0,          // left edge of that panel
+  panelSize: 0,       // requested power-up panel thickness; 0 = no panel
+  panelSide: 'right', // 'right' on wide viewports, 'bottom' when narrow
+  panelW: 0,          // reserved column on right (set when panelSide === 'right')
+  panelH: 0,          // reserved strip at bottom (set when panelSide === 'bottom')
+  panelX: 0,          // left edge of right-side panel
+  panelY: 0,          // top edge of bottom panel
 };
 
 // Gem color palette for particles (mapped 1:1 to types 0..6)
@@ -107,15 +111,38 @@ export function resize() {
   layout.hudY = 14;
   layout.hudRowH = 28;
 
-  // The board centers within (viewportW − panelW) so a side panel doesn't overlap it.
+  // Pick panel orientation: narrow phones get the power-ups in a horizontal
+  // strip below the board so vertical real estate (which is plentiful) absorbs
+  // the panel instead of squeezing the board horizontally. Wide viewports keep
+  // the right-side column.
+  if (layout.panelSize > 0) {
+    if (layout.isNarrow) {
+      layout.panelSide = 'bottom';
+      layout.panelW = 0;
+      layout.panelH = layout.panelSize;
+    } else {
+      layout.panelSide = 'right';
+      layout.panelW = layout.panelSize;
+      layout.panelH = 0;
+    }
+  } else {
+    layout.panelSide = 'right';
+    layout.panelW = 0;
+    layout.panelH = 0;
+  }
+
+  // Board centers within the area left after subtracting HUD, optional right
+  // panel, and optional bottom panel. 20px bottom breathing room is preserved
+  // below the panel (or below the board when there's no bottom panel).
   const availW = Math.max(1, viewportW - layout.panelW);
-  const availH = Math.max(1, viewportH - layout.hudH - 20); // 20px bottom breathing room
+  const availH = Math.max(1, viewportH - layout.hudH - 20 - layout.panelH);
   const minDim = Math.max(1, Math.min(availW - 16, availH));
   layout.cellSize = Math.max(1, Math.floor((minDim * 0.98) / GRID));
   layout.boardSize = layout.cellSize * GRID;
   layout.boardX = Math.floor((availW - layout.boardSize) / 2);
   layout.boardY = layout.hudH + Math.floor((availH - layout.boardSize) / 2);
   layout.panelX = availW;
+  layout.panelY = layout.boardY + layout.boardSize + 10;
 
   // Invalidate cached layers — they're sized to the old layout.
   bgLayer = null;
@@ -127,9 +154,11 @@ export function resize() {
   timeBombCache.clear();
 }
 
-// Scenes that want a right-edge power-up panel call this on enter (and 0 on exit).
+// Scenes that want a power-up panel call this on enter (and 0 on exit). The
+// thickness is interpreted as width on wide viewports and as height on narrow
+// ones — resize() decides orientation based on isNarrow.
 export function setPanelWidth(px) {
-  layout.panelW = px;
+  layout.panelSize = px;
   resize();
   buildAtlas();
 }

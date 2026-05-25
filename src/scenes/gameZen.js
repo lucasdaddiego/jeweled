@@ -67,8 +67,9 @@ export function enter(args = {}) {
   overlay.reset();
   overlay.setMilestoneFloor(milestoneFloor);
   debugHud.setActiveCascade(cascade);
-  // Reserve right-side panel for power-ups
-  render.setPanelWidth(render.layout.isNarrow ? 56 : 72);
+  // Reserve space for the power-up panel — render picks the side (right on
+  // wide viewports, bottom on narrow ones) and uses this as the thickness.
+  render.setPanelWidth(render.layout.isNarrow ? 76 : 72);
   if (entryAnim) cascade.playEntryAnimation();
 
   cascade.onMatchCleared = (cells, depth) => {

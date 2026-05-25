@@ -57,6 +57,16 @@ export function draw(cursorX, cursorY, buttons) {
 }
 
 function drawPowerupPanel(cursorX, cursorY, buttons) {
+  const charges = powerups.getCharges();
+  const progress = powerups.milestoneProgress(cascade.score, milestoneFloor);
+  if (render.layout.panelSide === 'bottom') {
+    drawHorizontalPanel(cursorX, cursorY, buttons, charges, progress);
+  } else {
+    drawVerticalPanel(cursorX, cursorY, buttons, charges, progress);
+  }
+}
+
+function drawVerticalPanel(cursorX, cursorY, buttons, charges, progress) {
   const px = render.layout.panelX + 6;
   const pw = render.layout.panelW - 12;
   const slotH = pw + 12;
@@ -65,8 +75,6 @@ function drawPowerupPanel(cursorX, cursorY, buttons) {
   // hugs the right side of the board on its midline rather than its top edge.
   const stackH = POWERUP_SLOTS.length * slotH + (POWERUP_SLOTS.length - 1) * gap;
   let py = render.layout.boardY + Math.max(0, Math.floor((render.layout.boardSize - stackH) / 2));
-  const charges = powerups.getCharges();
-  const progress = powerups.milestoneProgress(cascade.score, milestoneFloor);
   for (const slot of POWERUP_SLOTS) {
     const meta = POWERUP_META[slot];
     const hover = cursorX >= px && cursorX <= px + pw && cursorY >= py && cursorY <= py + slotH;
@@ -74,6 +82,26 @@ function drawPowerupPanel(cursorX, cursorY, buttons) {
     render.drawPowerupSlot(px, py, pw, slotH, meta.emoji, meta.ring, charges[slot], progress, hover, isActive);
     buttons.push({ x: px, y: py, w: pw, h: slotH, onClick: () => onPowerupSlotClicked(slot), kind: 'powerup' });
     py += slotH + gap;
+  }
+}
+
+function drawHorizontalPanel(cursorX, cursorY, buttons, charges, progress) {
+  const pad = 6;
+  const slotH = Math.max(40, render.layout.panelH - pad * 2);
+  const gap = 8;
+  // Slots are roughly square but capped to the panel's height so charge dots
+  // and the progress ring still have room.
+  const slotW = slotH;
+  const stackW = POWERUP_SLOTS.length * slotW + (POWERUP_SLOTS.length - 1) * gap;
+  const py = render.layout.panelY + pad;
+  let px = render.layout.boardX + Math.max(0, Math.floor((render.layout.boardSize - stackW) / 2));
+  for (const slot of POWERUP_SLOTS) {
+    const meta = POWERUP_META[slot];
+    const hover = cursorX >= px && cursorX <= px + slotW && cursorY >= py && cursorY <= py + slotH;
+    const isActive = pendingPowerup === slot;
+    render.drawPowerupSlot(px, py, slotW, slotH, meta.emoji, meta.ring, charges[slot], progress, hover, isActive);
+    buttons.push({ x: px, y: py, w: slotW, h: slotH, onClick: () => onPowerupSlotClicked(slot), kind: 'powerup' });
+    px += slotW + gap;
   }
 }
 
@@ -103,8 +131,13 @@ function drawTargetModeOverlay(cursorX, cursorY) {
       align: 'center', shadow: true,
     },
   );
+  // When the power-up panel sits at the bottom, place the cancel hint above
+  // the board so it isn't covered by the panel.
+  const cancelY = render.layout.panelSide === 'bottom'
+    ? Math.max(2, render.layout.boardY - 16)
+    : render.layout.boardY + render.layout.boardSize + 14;
   render.drawText(i18n.t('powerup.tapOutsideCancel'),
-    render.boardCenterX(), render.layout.boardY + render.layout.boardSize + 14, {
+    render.boardCenterX(), cancelY, {
       font: '12px sans-serif', align: 'center', color: 'rgba(255,255,255,0.7)',
   });
 }

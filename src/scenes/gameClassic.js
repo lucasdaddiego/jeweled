@@ -69,7 +69,7 @@ export function enter(args = {}) {
   overlay.reset();
   overlay.setMilestoneFloor(milestoneFloor);
   debugHud.setActiveCascade(cascade);
-  render.setPanelWidth(render.layout.isNarrow ? 56 : 72);
+  render.setPanelWidth(render.layout.isNarrow ? 76 : 72);
   if (entryAnim) cascade.playEntryAnimation();
 
   cascade.onMatchCleared = (cells, depth) => {
