@@ -152,10 +152,21 @@ body.daily-bg {
   50%      { transform: rotate(225deg) scale(1.08); }
 }
 .boot-title {
-  font-size: 32px; font-weight: bold;
-  color: #f3f0ff; letter-spacing: 4px;
+  font-size: 38px; font-weight: 900;
+  letter-spacing: 6px;
   margin-bottom: 24px;
-  text-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  background: linear-gradient(135deg, #ff9ec0, #d59bff, #8fd1ff, #d59bff, #ff9ec0);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgba(180, 110, 255, 0.55));
+  animation: bootTitleShimmer 4.5s ease-in-out infinite;
+}
+@keyframes bootTitleShimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
 }
 .boot-dots { display: flex; gap: 8px; }
 .boot-dots span {
@@ -178,6 +189,6 @@ body.daily-bg {
     animation: none !important;
     background-position: 0% 0% !important;
   }
-  .boot-gem, .boot-dots span { animation: none !important; }
+  .boot-gem, .boot-dots span, .boot-title { animation: none !important; }
 }
 

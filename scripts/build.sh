@@ -2,10 +2,9 @@
 # Build the Cloudflare Pages publish directory.
 #
 # Copies only the files that should be public-facing into dist/, excluding
-# repo metadata, dev tooling (.claude/, scripts/), and dev-only test pages
-# (emoji-sample.html). Cloudflare Pages serves whatever is in
-# pages_build_output_dir at the site root, so anything outside dist/ stays
-# private to the repo.
+# repo metadata and dev tooling (.claude/, scripts/). Cloudflare Pages serves
+# whatever is in pages_build_output_dir at the site root, so anything outside
+# dist/ stays private to the repo.
 #
 # Local: bash scripts/build.sh && wrangler pages dev dist
 # Deploy: bash scripts/build.sh && wrangler pages deploy dist
@@ -36,7 +35,6 @@ cat > dist/_redirects <<'EOF'
 # protection is that scripts/build.sh simply doesn't copy them.
 /.claude/* /404 404
 /scripts/* /404 404
-/emoji-sample.html /404 404
 /wrangler.jsonc /404 404
 /.gitignore /404 404
 EOF

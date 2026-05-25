@@ -12,7 +12,6 @@ import { Tween, easings } from './animations.js';
 export const STATE = {
   IDLE:                'IDLE',
   SWAPPING:            'SWAPPING',
-  VALIDATING:          'VALIDATING',
   RESOLVING:           'RESOLVING',
   ACTIVATING_SPECIALS: 'ACTIVATING_SPECIALS',
   FALLING:             'FALLING',

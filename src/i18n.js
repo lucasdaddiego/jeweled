@@ -43,7 +43,7 @@ const en = {
   'common.copiedToClipboard': 'Copied to clipboard!',
 
   // Title scene
-  'title.brand':           'GEM MATCH',
+  'title.brand':           'JEWELED',
   'title.welcomeBack':     'Welcome back, {name}',
   'title.continueZen':     '▶ Continue Zen',
   'title.continueClassic': '▶ Continue Classic',
@@ -63,6 +63,8 @@ const en = {
   'title.blitzSubtitleBest': '60 active sec  ·  Best: {score}',
   'title.blitzSubtitle':   '60 active sec',
   'title.puzzlesSubtitle': '{done} / {total} solved',
+  'title.stats':           '📊  Stats',
+  'title.settings':        '⚙  Settings',
 
   // Settings overlay
   'settings.title':           'Settings',
@@ -116,7 +118,7 @@ const en = {
   'result.goalNotReached':       'Goal not reached',
   'result.runEnded':             'Run Ended',
   'result.scorePts':             '{score} pts',
-  'result.shareDailyText':       'Gem Match Daily {date}: {score} pts',
+  'result.shareDailyText':       'Jeweled Daily {date}: {score} pts',
 
   // Level select
   'levelSelect.title':           'Classic — Choose a Level',
@@ -249,6 +251,8 @@ const es = {
   'title.blitzSubtitleBest': '60s activos  ·  Mejor: {score}',
   'title.blitzSubtitle':   '60s activos',
   'title.puzzlesSubtitle': '{done} / {total} resueltos',
+  'title.stats':           '📊  Estadísticas',
+  'title.settings':        '⚙  Ajustes',
 
   // Settings
   'settings.title':           'Ajustes',
@@ -297,7 +301,7 @@ const es = {
   'result.goalNotReached':       'Objetivo no alcanzado',
   'result.runEnded':             'Partida terminada',
   'result.scorePts':             '{score} pts',
-  'result.shareDailyText':       'Gem Match Diario {date}: {score} pts',
+  'result.shareDailyText':       'Jeweled Diario {date}: {score} pts',
 
   // Level select
   'levelSelect.title':           'Clásico — Elige nivel',
@@ -401,7 +405,6 @@ const DICTIONARIES = { en, es };
 
 let _setting = 'auto';   // raw value from storage: 'auto' | 'en' | 'es'
 let _locale = 'en';      // resolved locale: 'en' | 'es'
-const _listeners = new Set();
 
 // Cached Intl instances per locale; rebuilt on locale change so we don't
 // allocate a fresh formatter for every formatNumber call.
@@ -426,16 +429,10 @@ export function setLanguage(value) {
   _locale = newLocale;
   _nfCache = new Intl.NumberFormat(_locale);
   _dfCache = new Intl.DateTimeFormat(_locale, { year: 'numeric', month: 'short', day: 'numeric' });
-  for (const fn of _listeners) { try { fn(_locale); } catch {} }
 }
 
 export function getLanguageSetting() { return _setting; }
 export function getLocale() { return _locale; }
-
-export function onLocaleChange(fn) {
-  _listeners.add(fn);
-  return () => _listeners.delete(fn);
-}
 
 // Translate. Vars interpolate {name} → vars.name. Falls back to en, then to
 // the key itself so missed strings are visible during testing.

@@ -1,4 +1,4 @@
-// Network-first service worker for Gem Match.
+// Network-first service worker for Jeweled.
 //
 // Why network-first: cache-first means users keep seeing old code forever after
 // a deploy until they clear site data. With network-first they always get the

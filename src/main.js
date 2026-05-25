@@ -55,7 +55,6 @@ export function clockMs() { return _clockMs; }
 const CROSSFADE_MS = 220;
 let sceneAlpha = 1;          // 0 = scene invisible (black overlay), 1 = fully visible
 let crossfadeT = 0;          // 0..CROSSFADE_MS — counter
-export function isCrossfading() { return crossfadeT < CROSSFADE_MS; }
 
 export function setScene(name, args = {}, opts = {}) {
   // Auto-replace on transient sources (result → next), unless the caller

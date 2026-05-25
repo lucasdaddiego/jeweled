@@ -21,7 +21,7 @@ const pool = [];
 for (let i = 0; i < FLOATER_POOL; i++) pool.push(new Floater());
 let aliveCount = 0;
 
-export function spawnForCascade(depth, x, y) {
+function spawnForCascade(depth, x, y) {
   let text = FLOATER_LABELS[depth];
   let fontSize = 28;
   if (!text) {

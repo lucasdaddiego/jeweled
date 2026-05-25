@@ -1,7 +1,7 @@
 {
   "id": "/?source=pwa",
-  "name": "Gem Match",
-  "short_name": "GemMatch",
+  "name": "Jeweled",
+  "short_name": "Jeweled",
   "description": "A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.",
   "categories": ["games", "puzzles"],
   "start_url": "/",

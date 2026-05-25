@@ -261,16 +261,6 @@ export function clearFrame() {
 export function ctxRef() { return ctx; }
 
 // === Coordinate helpers ===
-export function cellToScreen(r, c, cell = null) {
-  const cs = layout.cellSize;
-  const rr = (cell && cell.renderRow != null) ? cell.renderRow : r;
-  const cc = (cell && cell.renderCol != null) ? cell.renderCol : c;
-  return {
-    x: layout.boardX + cc * cs,
-    y: layout.boardY + rr * cs,
-  };
-}
-
 export function screenToCell(x, y) {
   const cs = layout.cellSize;
   const c = Math.floor((x - layout.boardX) / cs);
@@ -466,17 +456,6 @@ function drawGemWithEffects(ctx, cell, x, y, size) {
 function drawFlash(ctx, x, y, size, alpha) {
   ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.55})`;
   ctx.fillRect(x, y, size, size);
-}
-
-// Splitmix32-style hash: deterministic pseudo-random 0..1 from an integer id.
-// Used to give each gem its own stable per-cell variation (e.g. sparkle corner
-// placement) so the board doesn't look uniform.
-function cellHash(id, salt = 0) {
-  let x = ((id + salt) * 0x85EBCA77) | 0;
-  x = ((x ^ (x >>> 16)) * 0x9E3779B1) | 0;
-  x = ((x ^ (x >>> 13)) * 0x85EBCA6B) | 0;
-  x = x ^ (x >>> 16);
-  return (x >>> 0) / 4294967296;  // 0..1
 }
 
 function drawSpecialOverlay(ctx, cell, x, y, size) {

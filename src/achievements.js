@@ -53,10 +53,6 @@ export const ACHIEVEMENTS = [
 const toastQueue = [];
 let _hydrated = false;
 
-export function pendingToasts() {
-  getState();   // ensures hydration so callers don't see an empty queue pre-warm
-  return toastQueue;
-}
 export function consumeToast() {
   getState();   // hydrate before draining
   const t = toastQueue.shift() || null;

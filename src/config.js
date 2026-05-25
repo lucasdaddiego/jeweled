@@ -90,9 +90,6 @@ export const FLOATER_POOL  = 32;
 export const STORAGE_KEY     = 'gem-match:v1';
 export const STORAGE_VERSION = 1;
 
-// Layout — board rendering target. Actual cell size computed at runtime from canvas size.
-export const TARGET_CELL_PX = 64;
-
 // Player name max length
 export const NAME_MAX_LEN = 16;
 

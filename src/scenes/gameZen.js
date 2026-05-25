@@ -212,7 +212,7 @@ async function offerSavePainting() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `gem-match-painting-${todayISO()}.png`;
+      a.download = `jeweled-painting-${todayISO()}.png`;
       document.body.appendChild(a);
       a.click();
       a.remove();

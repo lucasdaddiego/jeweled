@@ -80,10 +80,6 @@ function onPointerCancel(e) {
   if (listeners.onCancel) listeners.onCancel(lastPointerX, lastPointerY);
 }
 
-export function getCursor() {
-  return { x: lastPointerX, y: lastPointerY };
-}
-
 export function isPointerDown() {
   return pointerIsDown;
 }

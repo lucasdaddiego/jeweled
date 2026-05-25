@@ -2,7 +2,7 @@
   "name": "jeweled",
   "compatibility_date": "2026-05-23",
   // Publish only the files in dist/ — populated by scripts/build.sh. This keeps
-  // dev tooling (.claude/, scripts/, emoji-sample.html) out of the public
-  // origin. dist/_redirects also 404s those paths as defense-in-depth.
+  // dev tooling (.claude/, scripts/) out of the public origin. dist/_redirects
+  // also 404s those paths as defense-in-depth.
   "pages_build_output_dir": "dist"
 }

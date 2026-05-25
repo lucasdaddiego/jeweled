@@ -5,7 +5,7 @@ import * as storage from '../storage.js';
 import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
 import { todayISO } from '../rng.js';
-import { setScene } from '../main.js';
+import { setScene, clockMs } from '../main.js';
 import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
@@ -45,13 +45,15 @@ export function draw() {
   const btnW = Math.min(360, w - 40);
   const last = profile.lastPlayedMode;
   const continueState = last && state[last] && state[last].saveState ? state[last].saveState : null;
-  const buttonCount = (continueState ? 1 : 0) + 5;
+  // 5 mode buttons + the Stats/Settings sub-row (counts as one row for layout).
+  const buttonCount = (continueState ? 1 : 0) + 5 + 1;
 
   // Short-viewport mode: tighten everything so the heatmap doesn't get
   // clipped at the bottom edge on laptop/landscape windows.
-  const isShort = h < 720;
+  const isShort = h < 760;
   const btnH = isShort ? 52 : (render.layout.isNarrow ? 56 : 62);
   const btnGap = isShort ? 8 : 10;
+  const subBtnH = Math.max(40, btnH - 12); // Stats/Settings row a touch shorter
 
   // Heatmap geometry (12 weeks × 7 days)
   const hmCell = isShort ? 11 : 14;
@@ -62,10 +64,12 @@ export function draw() {
   const labelH = isShort ? 20 : 24; // "streak" text below
 
   // Vertical block sizes
-  const titleH = 56;
+  const titleFontPx = render.layout.isNarrow ? 40 : 56;
+  const titleH = titleFontPx + 14; // font + glow margin so the welcome line doesn't sit on the halo
   const welcomeH = 28;
   const titleBlockH = titleH + (needsNameEntry ? 0 : welcomeH);
-  const buttonsH = buttonCount * btnH + (buttonCount - 1) * btnGap;
+  // Last "row" is the Stats/Settings pair at subBtnH; the rest at btnH.
+  const buttonsH = (buttonCount - 1) * btnH + subBtnH + (buttonCount - 1) * btnGap;
   const heatmapBlockH = hmH + labelH;
   const preButtonsGap = isShort ? 16 : 24;
   const preHeatmapGap = isShort ? 14 : 20;
@@ -74,13 +78,8 @@ export function draw() {
   const minTop = isShort ? 20 : 40;
   let y = Math.max(minTop, Math.floor((h - totalH) / 2));
 
-  const titleFontPx = render.layout.isNarrow ? 36 : 48;
-  // 'GEM MATCH' kept as the brand chip — not translated.
-  render.drawText(i18n.t('title.brand'), w / 2, y, {
-    font: `bold ${titleFontPx}px -apple-system, system-ui, sans-serif`,
-    align: 'center',
-    shadow: true,
-  });
+  // Brand name kept as English chip — not translated.
+  drawBrandTitle(i18n.t('title.brand'), w / 2, y, titleFontPx);
   y += titleH;
 
   if (!needsNameEntry) {
@@ -158,6 +157,16 @@ export function draw() {
     drawHitButton(x, y, btnW, btnH, i18n.t('title.puzzles'), () => setScene('puzzleSelect'), { subtitle });
     y += btnH + btnGap;
   }
+  // Stats + Settings — paired sub-row, together spanning a single main button.
+  {
+    const x = (w - btnW) / 2;
+    const subW = Math.floor((btnW - btnGap) / 2);
+    drawHitButton(x, y, subW, subBtnH, i18n.t('title.stats'),
+      () => setScene('stats'), { kind: 'secondary' });
+    drawHitButton(x + subW + btnGap, y, subW, subBtnH, i18n.t('title.settings'),
+      () => { settingsOpen = !settingsOpen; }, { kind: 'secondary' });
+    y += subBtnH + btnGap;
+  }
 
   // Gap before heatmap
   y += preHeatmapGap - btnGap;
@@ -165,25 +174,49 @@ export function draw() {
   // Heatmap, centered horizontally
   drawHeatmap(state.playHistory, Math.floor((w - hmW) / 2), y, hmWeeks, hmDays, hmCell, hmGap);
 
-  // Stats + Settings icons. On wide viewports, anchor near the right edge of
-  // the menu column (with a small outset) so they read as part of the menu
-  // group instead of floating off in the far corner. On narrow viewports
-  // (mobile), stay in the top-right corner.
-  const sw = 44;
-  const iconY = 16;
-  let settingsX, statsX;
-  if (w >= 720) {
-    const rightX = w / 2 + btnW / 2 + 60;
-    settingsX = rightX - sw;
-    statsX = settingsX - 10 - sw;
-  } else {
-    settingsX = w - sw - 16;
-    statsX = settingsX - 8 - sw;
-  }
-  drawHitButton(statsX,    iconY, sw, sw, '📊', () => setScene('stats'));
-  drawHitButton(settingsX, iconY, sw, sw, '⚙', () => { settingsOpen = !settingsOpen; });
-
   if (settingsOpen) drawSettingsOverlay();
+}
+
+// Brand title: animated gem-tone gradient with pulsing glow.
+// Pure decorative — no hit rect, no interaction.
+function drawBrandTitle(text, cx, y, fontPx) {
+  const ctx = render.ctxRef();
+  const t = clockMs() / 1000;
+  ctx.save();
+  ctx.font = `900 ${fontPx}px -apple-system, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  const textW = ctx.measureText(text).width;
+
+  // Pulsing outer glow (warm halo behind the glyphs).
+  const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
+  ctx.shadowColor = `rgba(180, 110, 255, ${0.55 + pulse * 0.30})`;
+  ctx.shadowBlur = 22 + pulse * 12;
+  ctx.shadowOffsetY = 2;
+
+  // Gem-tone gradient that drifts horizontally for a slow shimmer.
+  const pan = Math.sin(t * 0.5) * (textW * 0.4);
+  const grad = ctx.createLinearGradient(cx - textW + pan, 0, cx + textW + pan, 0);
+  grad.addColorStop(0.00, '#ff9ec0'); // pink
+  grad.addColorStop(0.25, '#d59bff'); // light purple
+  grad.addColorStop(0.50, '#8fd1ff'); // sky blue
+  grad.addColorStop(0.75, '#d59bff');
+  grad.addColorStop(1.00, '#ff9ec0');
+  ctx.fillStyle = grad;
+  ctx.fillText(text, cx, y);
+
+  // Second pass without the glow keeps the glyph edges crisp.
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.fillText(text, cx, y);
+
+  // Thin highlight stroke for extra polish.
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeText(text, cx, y);
+
+  ctx.restore();
 }
 
 function drawHitButton(x, y, w, h, label, onClick, opts = {}) {

@@ -123,7 +123,7 @@ async function shareDaily() {
   try {
     if (navigator.share) {
       // Brand name stays English in the share sheet title.
-      await navigator.share({ title: 'Gem Match', text });
+      await navigator.share({ title: 'Jeweled', text });
     } else if (navigator.clipboard) {
       await navigator.clipboard.writeText(text);
       await dialogs.alert(i18n.t('common.copiedToClipboard'));

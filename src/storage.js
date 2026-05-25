@@ -1,6 +1,7 @@
 // localStorage wrapper with versioned schema.
 
 import { STORAGE_KEY, STORAGE_VERSION } from './config.js';
+import { todayISO } from './rng.js';
 
 function defaultState() {
   return {
@@ -180,11 +181,4 @@ export function recordPlayDay(scoreDelta = 0) {
     totalScore: cur.totalScore + (scoreDelta || 0),
   };
   scheduleSave();
-}
-
-function todayISO(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
