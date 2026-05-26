@@ -76,7 +76,9 @@ export function draw() {
   const preHeatmapGap = isShort ? 14 : 20;
 
   const totalH = titleBlockH + preButtonsGap + buttonsH + preHeatmapGap + heatmapBlockH;
-  const minTop = isShort ? 20 : 40;
+  // Add safeTop so the brand title doesn't hide under the iOS status bar
+  // in standalone / PWA mode.
+  const minTop = (isShort ? 20 : 40) + render.layout.safeTop;
   let y = Math.max(minTop, Math.floor((h - totalH) / 2));
 
   // Brand name kept as English chip — not translated.

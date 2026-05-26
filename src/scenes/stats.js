@@ -28,7 +28,7 @@ export function draw() {
   render.clearFrame();
   buttons = [];
 
-  const titleY = h * 0.05;
+  const titleY = h * 0.05 + render.layout.safeTop;
   render.drawText(i18n.t('stats.title'), w / 2, titleY, {
     font: `bold ${render.responsiveFont(26)}px -apple-system, system-ui, sans-serif`,
     align: 'center',
@@ -91,7 +91,8 @@ export function draw() {
   // Back button — shared menu-column anchor so all menu scenes align.
   const backW = render.layout.isNarrow ? 56 : 76;
   const col = render.menuColumn();
-  render.drawHitButton(col.right - backW, 16, backW, 32,
+  const backY = 24 + render.layout.safeTop;
+  render.drawHitButton(col.right - backW, backY, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'), buttons, cursorX, cursorY);
 }

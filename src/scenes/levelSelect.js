@@ -26,7 +26,7 @@ export function draw() {
   buttons = [];
 
   const totalPages = pageCount();
-  const titleY = h * 0.06;
+  const titleY = h * 0.06 + render.layout.safeTop;
   render.drawText(i18n.t('levelSelect.title'), w / 2, titleY, {
     font: `bold ${render.responsiveFont(28)}px -apple-system, system-ui, sans-serif`,
     align: 'center',
@@ -90,8 +90,11 @@ export function draw() {
   // consistency with puzzle select and stats. The level grid is narrower than
   // the column (tile-size cap keeps tiles small), but anchoring to the column
   // keeps Back from overlapping the centered title on wide viewports.
+  // Match the game-HUD top padding so menu and game scenes line up
+  // visually against the iOS URL bar / safe area.
   const backW = render.layout.isNarrow ? 56 : 76;
-  drawHitButton(col.right - backW, 16, backW, 32,
+  const backY = 24 + render.layout.safeTop;
+  drawHitButton(col.right - backW, backY, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'));
 }

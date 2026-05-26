@@ -167,7 +167,8 @@ function frame(now) {
     const splash = document.getElementById('boot-splash');
     if (splash) {
       splash.classList.add('fade-out');
-      setTimeout(() => splash.remove(), 400);
+      // Matches the 150ms opacity transition in style.css (+50ms slack).
+      setTimeout(() => splash.remove(), 200);
     }
   }
 

@@ -36,11 +36,87 @@ jobs:
       - name: Build (copy sources into dist/)
         run: bash scripts/build.sh
 
+      # Cache esbuild + html-minifier-terser the same way we cache wrangler:
+      # full node_modules tree, not just the npm tarball cache. Warm runs skip
+      # `npm install` entirely. Bump the key suffix to force a clean reinstall.
+      - name: Cache build tools
+        id: build-tools-cache
+        uses: actions/cache@v4
+        with:
+          path: .build-tools-install
+          key: build-tools-1-${{ runner.os }}
+
+      - name: Install build tools
+        if: steps.build-tools-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .build-tools-install
+          cd .build-tools-install
+          npm install esbuild@0.24 html-minifier-terser@7 --no-audit --no-fund
+
+      # Bundle src/*.js into a single minified module, then minify CSS, HTML,
+      # and the service worker. The bundler tree-shakes unreachable code and
+      # mangles identifiers — that's our "light obfuscation". Heavier transforms
+      # (control-flow flattening etc.) would tank frame rate on the Canvas loop.
+      #
+      # Order matters: build.sh has already stamped $GITHUB_SHA into
+      # dist/src/build.js and dist/sw.js. The bundler reads the stamped build.js
+      # via title.js's import, so BUILD survives into the bundle. sw.js is
+      # minified afterwards but the cache key stamp from build.sh is preserved.
+      - name: Bundle, minify, obfuscate
+        run: |
+          set -euo pipefail
+          ESBUILD=.build-tools-install/node_modules/.bin/esbuild
+          HTMLMIN=.build-tools-install/node_modules/.bin/html-minifier-terser
+
+          # Bundle the ES-module entrypoint. --format=esm preserves the
+          # `<script type="module">` contract; --target=es2022 keeps the output
+          # small while remaining safe on any browser shipping in the last 3y.
+          "$ESBUILD" dist/src/main.js \
+            --bundle \
+            --minify \
+            --format=esm \
+            --target=es2022 \
+            --legal-comments=none \
+            --outfile=dist/main.bundle.js
+
+          # The bundle now contains every reachable src/*.js, so the originals
+          # no longer need to be published. Dropping them also prevents stale
+          # un-minified copies from being served via direct URL.
+          rm -rf dist/src
+
+          # Point index.html at the bundled entrypoint. GNU sed (ubuntu) is fine
+          # with -i without a backup suffix.
+          sed -i 's|/src/main.js|/main.bundle.js|' dist/index.html
+
+          # Rewrite sw.js PRECACHE: drop every '/src/...' entry, add the bundle
+          # once after '/favicon.svg'. CACHEABLE_PREFIXES still contains '/src/'
+          # but that's harmless now — no path under /src/ will ever match.
+          sed -i "/^  '\/src\//d" dist/sw.js
+          sed -i "s|'/favicon.svg',|'/favicon.svg',\n  '/main.bundle.js',|" dist/sw.js
+
+          # Minify CSS and the service worker in place. --allow-overwrite lets
+          # esbuild read and write the same path in one invocation.
+          "$ESBUILD" dist/style.css --minify --allow-overwrite --outfile=dist/style.css
+          "$ESBUILD" dist/sw.js     --minify --allow-overwrite --outfile=dist/sw.js
+
+          # Minify HTML. --minify-css/--minify-js handle any inline style/script
+          # (currently none, but cheap insurance if that changes).
+          "$HTMLMIN" \
+            --collapse-whitespace \
+            --remove-comments \
+            --minify-css true \
+            --minify-js true \
+            --remove-redundant-attributes \
+            -o dist/index.html dist/index.html
+
+          echo "Post-bundle dist/ size: $(du -sh dist | cut -f1)"
+          echo "Bundle size: $(du -h dist/main.bundle.js | cut -f1)"
+
       # Parse every JS file in dist/ with `node --check`. Catches syntax
       # errors that would otherwise ship to prod and leave the app stuck on
       # the boot splash (e.g. duplicate `const`, missing brace, stray comma).
-      # Parallelized via xargs -P so 40 files at ~50ms each finish in ~0.3s
-      # instead of ~2s sequential.
+      # Runs *after* bundling so the minified output is what gets validated.
+      # Parallelized via xargs -P so a handful of files finish in ~0.2s.
       - name: Syntax-check JS bundle
         run: |
           set -euo pipefail

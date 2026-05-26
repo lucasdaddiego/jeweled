@@ -31,7 +31,8 @@ export function draw() {
   render.clearFrame();
   buttons = [];
 
-  render.drawText(i18n.t('puzzleSelect.title'), w / 2, h * 0.06, {
+  const titleY = h * 0.06 + render.layout.safeTop;
+  render.drawText(i18n.t('puzzleSelect.title'), w / 2, titleY, {
     font: `bold ${render.responsiveFont(28)}px -apple-system, system-ui, sans-serif`,
     align: 'center',
   });
@@ -40,7 +41,7 @@ export function draw() {
   const completed = state.puzzle?.completed || {};
   render.drawText(
     i18n.t('puzzleSelect.solvedCount', { done: Object.keys(completed).length, total: PUZZLES.length }),
-    w / 2, h * 0.06 + 32,
+    w / 2, titleY + 32,
     { font: '14px sans-serif', align: 'center', color: 'rgba(255,255,255,0.6)' },
   );
 
@@ -90,7 +91,8 @@ export function draw() {
   }
 
   const backW = render.layout.isNarrow ? 56 : 76;
-  render.drawHitButton(col.right - backW, 16, backW, 32,
+  const backY = 24 + render.layout.safeTop;
+  render.drawHitButton(col.right - backW, backY, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'), buttons, cursorX, cursorY);
 }

@@ -45,6 +45,7 @@ export const layout = {
   hudH: 80,           // height of the reserved HUD strip above the board
   hudY: 16,           // y of the HUD content start
   hudRowH: 28,        // vertical spacing of HUD rows
+  safeTop: 0,         // env(safe-area-inset-top) — non-zero on PWA / standalone
   isNarrow: false,    // viewport < 480px width
   panelSize: 0,       // requested power-up panel thickness; 0 = no panel
   panelSide: 'right', // 'right' on wide viewports, 'bottom' when narrow
@@ -105,10 +106,20 @@ export function resize() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
   layout.isNarrow = viewportW < 480;
+  // Read the top safe-area inset. In iOS Safari with the URL bar visible
+  // this is 0 (URL bar provides padding); in standalone / PWA mode it's the
+  // status bar height. Either way, we add it to the HUD top so content stays
+  // clear of the system UI.
+  const safeTop = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--sat'),
+  ) || 0;
+  layout.safeTop = safeTop;
   // Reserve a fixed HUD strip at the top; board sits in the remaining area.
-  // Two HUD rows (e.g. Classic level + progress bar) need ~80px; tighter on tiny screens.
-  layout.hudH = layout.isNarrow ? 72 : 88;
-  layout.hudY = 14;
+  // Two HUD rows (e.g. Classic level + progress bar) need the room; tighter
+  // on tiny screens. Base padding bumped from 14→22 so HUD content has
+  // breathing room from the iOS URL bar even when the safe inset is 0.
+  layout.hudY = 22 + safeTop;
+  layout.hudH = (layout.isNarrow ? 80 : 96) + safeTop;
   layout.hudRowH = 28;
 
   // Pick panel orientation: narrow phones get the power-ups in a horizontal

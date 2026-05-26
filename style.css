@@ -124,7 +124,9 @@ body.daily-bg {
   background: linear-gradient(135deg, #2a1a4a, #1a2a4a, #2a1a4a);
   background-size: 200% 200%;
   animation: bgDrift 20s ease-in-out infinite;
-  transition: opacity 350ms ease;
+  /* 150ms (was 350ms) so a screenshot taken right after the title appears
+     doesn't catch the splash overlapping the canvas's own JEWELED text. */
+  transition: opacity 150ms ease;
 }
 #boot-splash.fade-out { opacity: 0; pointer-events: none; }
 .boot-gem {
