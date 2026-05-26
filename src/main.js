@@ -351,6 +351,7 @@ function init() {
     || location.hostname === '127.0.0.1'
     || new URLSearchParams(location.search).has('debug');
   _dbg = dbg;
+  debugHud.setEnabled(dbg);
   if (dbg) window.__game = {
     storage, setScene, clockMs,
     setLanguage: i18n.setLanguage,

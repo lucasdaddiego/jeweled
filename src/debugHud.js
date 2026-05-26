@@ -18,6 +18,12 @@ export const counters = {
   drawBoard: 0,
 };
 
+// Live binding flipped by main.js once it knows whether ?debug=1 / localhost
+// applies. Hot-path callers gate counter writes behind this so the integer
+// bumps don't fire in production where nothing reads them.
+export let enabled = false;
+export function setEnabled(v) { enabled = v; }
+
 // Active cascade ref — scenes register on enter, clear on exit, so the debug
 // HUD can read anims.size without a scene-specific lookup. Single ref since
 // only one game scene is active at a time.

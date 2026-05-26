@@ -7,7 +7,7 @@ import * as waves from './waves.js';
 import * as painting from './painting.js';
 import * as bolts from './bolts.js';
 import * as input from './input.js';
-import { counters } from './debugHud.js';
+import { counters, enabled as _dbgEnabled } from './debugHud.js';
 import { clockMs } from './main.js';
 
 // Honor user's reduced-motion preference. Read once at module init; if it
@@ -35,6 +35,24 @@ let resizeRaf = 0;
 const badgeCache = new Map();      // `${emoji}|${ringColor}|${cellSize}|${DPR}|${hasFluent}`
 const colorBombCache = new Map();  // `${cellSize}|${DPR}`
 const timeBombCache = new Map();   // `${color}|${cellSize}|${DPR}` — badge background, sans number
+const lineHCache = new Map();      // `${cellSize}|${DPR}` — horizontal line + arrowheads
+const lineVCache = new Map();      // `${cellSize}|${DPR}` — vertical line + arrowheads
+const gravityCache = new Map();    // `${cellSize}|${DPR}` — ⇅ glyph + outline
+// Cache of ellipsize() results so buttons / HUD labels don't re-run
+// measureText every frame on stable text. Keyed by `${ctx.font}|${maxW}|${value}`.
+// Cleared on resize (font sizes scale with cellSize) and soft-capped at 256.
+const ellipsizeCache = new Map();
+// Composed font strings, interned by (weight, sizePx, family). Avoids the
+// per-call template-literal allocation in drawButton / TIME_BOMB number text.
+const _fontCache = new Map();
+function fontString(sizePx, family = '-apple-system, system-ui, sans-serif', weight = '') {
+  const key = weight + '|' + sizePx + '|' + family;
+  let s = _fontCache.get(key);
+  if (s) return s;
+  s = (weight ? weight + ' ' : '') + sizePx + 'px ' + family;
+  _fontCache.set(key, s);
+  return s;
+}
 
 // Layout (recomputed on resize). All values in CSS px.
 export const layout = {
@@ -167,6 +185,10 @@ export function resize() {
   badgeCache.clear();
   colorBombCache.clear();
   timeBombCache.clear();
+  lineHCache.clear();
+  lineVCache.clear();
+  gravityCache.clear();
+  ellipsizeCache.clear();
 }
 
 // Scenes that want a power-up panel call this on enter (and 0 on exit). The
@@ -354,7 +376,7 @@ export function drawBoardBg() {
 
 // Apply screen shake + draw board layer (painting -> gems -> overlays -> eyes -> particles -> floaters)
 export function drawBoard(grid, opts = {}) {
-  counters.drawBoard++;
+  if (_dbgEnabled) counters.drawBoard++;
   const shakeAmp = REDUCED_MOTION ? 0 : (opts.shakeAmp || 0);
   const settings = opts.settings || {};
   const hint = opts.hint || null;
@@ -501,25 +523,11 @@ function drawSpecialOverlay(ctx, cell, x, y, size) {
   ctx.save();
   switch (cell.special) {
     case SPECIAL.LINE_H: {
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = size * 0.06;
-      ctx.beginPath();
-      ctx.moveTo(x + size * 0.15, y + size * 0.5);
-      ctx.lineTo(x + size * 0.85, y + size * 0.5);
-      ctx.stroke();
-      drawArrowHead(ctx, x + size * 0.85, y + size * 0.5, size, 0);
-      drawArrowHead(ctx, x + size * 0.15, y + size * 0.5, size, Math.PI);
+      ctx.drawImage(ensureLineHLayer(size), x, y, size, size);
       break;
     }
     case SPECIAL.LINE_V: {
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = size * 0.06;
-      ctx.beginPath();
-      ctx.moveTo(x + size * 0.5, y + size * 0.15);
-      ctx.lineTo(x + size * 0.5, y + size * 0.85);
-      ctx.stroke();
-      drawArrowHead(ctx, x + size * 0.5, y + size * 0.85, size, Math.PI / 2);
-      drawArrowHead(ctx, x + size * 0.5, y + size * 0.15, size, -Math.PI / 2);
+      ctx.drawImage(ensureLineVLayer(size), x, y, size, size);
       break;
     }
     case SPECIAL.COLOR_BOMB: {
@@ -531,14 +539,7 @@ function drawSpecialOverlay(ctx, cell, x, y, size) {
       break;
     }
     case SPECIAL.GRAVITY: {
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      ctx.lineWidth = 2;
-      ctx.font = `${Math.floor(size * 0.35)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.strokeText('⇅', x + size * 0.5, y + size * 0.86);
-      ctx.fillText('⇅', x + size * 0.5, y + size * 0.86);
+      ctx.drawImage(ensureGravityLayer(size), x, y, size, size);
       break;
     }
     case SPECIAL.TIME_BOMB: {
@@ -551,7 +552,7 @@ function drawSpecialOverlay(ctx, cell, x, y, size) {
         // the per-tick countdown change doesn't need a fresh bake.
         ctx.drawImage(ensureTimeBombBadge(color, size), bx - side / 2, by - side / 2, side, side);
         ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.floor(side * 0.65)}px sans-serif`;
+        ctx.font = fontString(Math.floor(side * 0.65), 'sans-serif', 'bold');
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(cell.bombCountdown), bx, by + 1);
@@ -651,6 +652,69 @@ function ensureColorBombLayer(cellSize) {
   return canvas;
 }
 
+// Pre-baked LINE_H overlay: horizontal stripe + arrowheads. One entry per
+// cellSize × DPR. Replaces a per-cell-per-frame stroke + 2× arrowhead path.
+function ensureLineHLayer(cellSize) {
+  const key = `${cellSize}|${DPR}`;
+  let canvas = lineHCache.get(key);
+  if (canvas) return canvas;
+  const px = Math.max(8, Math.ceil(cellSize * DPR));
+  canvas = new OffscreenCanvas(px, px);
+  const c = canvas.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.strokeStyle = 'rgba(255,255,255,0.85)';
+  c.lineWidth = cellSize * 0.06;
+  c.beginPath();
+  c.moveTo(cellSize * 0.15, cellSize * 0.5);
+  c.lineTo(cellSize * 0.85, cellSize * 0.5);
+  c.stroke();
+  drawArrowHead(c, cellSize * 0.85, cellSize * 0.5, cellSize, 0);
+  drawArrowHead(c, cellSize * 0.15, cellSize * 0.5, cellSize, Math.PI);
+  lineHCache.set(key, canvas);
+  return canvas;
+}
+
+function ensureLineVLayer(cellSize) {
+  const key = `${cellSize}|${DPR}`;
+  let canvas = lineVCache.get(key);
+  if (canvas) return canvas;
+  const px = Math.max(8, Math.ceil(cellSize * DPR));
+  canvas = new OffscreenCanvas(px, px);
+  const c = canvas.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.strokeStyle = 'rgba(255,255,255,0.85)';
+  c.lineWidth = cellSize * 0.06;
+  c.beginPath();
+  c.moveTo(cellSize * 0.5, cellSize * 0.15);
+  c.lineTo(cellSize * 0.5, cellSize * 0.85);
+  c.stroke();
+  drawArrowHead(c, cellSize * 0.5, cellSize * 0.85, cellSize, Math.PI / 2);
+  drawArrowHead(c, cellSize * 0.5, cellSize * 0.15, cellSize, -Math.PI / 2);
+  lineVCache.set(key, canvas);
+  return canvas;
+}
+
+// Pre-baked GRAVITY overlay: outlined ⇅ glyph near the bottom of the cell.
+function ensureGravityLayer(cellSize) {
+  const key = `${cellSize}|${DPR}`;
+  let canvas = gravityCache.get(key);
+  if (canvas) return canvas;
+  const px = Math.max(8, Math.ceil(cellSize * DPR));
+  canvas = new OffscreenCanvas(px, px);
+  const c = canvas.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.fillStyle = 'rgba(255,255,255,0.9)';
+  c.strokeStyle = 'rgba(0,0,0,0.8)';
+  c.lineWidth = 2;
+  c.font = `${Math.floor(cellSize * 0.35)}px sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.strokeText('⇅', cellSize * 0.5, cellSize * 0.86);
+  c.fillText('⇅', cellSize * 0.5, cellSize * 0.86);
+  gravityCache.set(key, canvas);
+  return canvas;
+}
+
 // Pre-baked TIME_BOMB badge background (rounded-square + stroke). The
 // countdown number is drawn live on top so per-tick changes don't bust this
 // cache — only the two color variants (red/orange) get baked.
@@ -742,13 +806,13 @@ export function drawButton(x, y, w, h, label, opts = {}) {
   if (opts.subtitle) {
     // Two-line layout: title in the upper third, subtitle in the lower third,
     // with a clear gap so they never visually collide.
-    ctx.font = (opts.font || `${Math.floor(h * 0.36)}px -apple-system, system-ui, sans-serif`);
+    ctx.font = (opts.font || fontString(Math.floor(h * 0.36)));
     fillTextEllipsized(ctx, label, x + w / 2, y + h * 0.36, w - 24);
-    ctx.font = `${Math.floor(h * 0.20)}px -apple-system, system-ui, sans-serif`;
+    ctx.font = fontString(Math.floor(h * 0.20));
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     fillTextEllipsized(ctx, opts.subtitle, x + w / 2, y + h * 0.72, w - 24);
   } else {
-    ctx.font = (opts.font || `${Math.floor(h * 0.4)}px -apple-system, system-ui, sans-serif`);
+    ctx.font = (opts.font || fontString(Math.floor(h * 0.4)));
     fillTextEllipsized(ctx, label, x + w / 2, y + h / 2, w - 24);
   }
   ctx.restore();
@@ -756,15 +820,25 @@ export function drawButton(x, y, w, h, label, opts = {}) {
 
 export function ellipsize(ctx, text, maxW) {
   const value = String(text ?? '');
-  if (ctx.measureText(value).width <= maxW) return value;
-  const suffix = '…';
-  let lo = 0, hi = value.length;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (ctx.measureText(value.slice(0, mid) + suffix).width <= maxW) lo = mid;
-    else hi = mid - 1;
+  const key = ctx.font + '|' + maxW + '|' + value;
+  const cached = ellipsizeCache.get(key);
+  if (cached !== undefined) return cached;
+  let out;
+  if (ctx.measureText(value).width <= maxW) {
+    out = value;
+  } else {
+    const suffix = '…';
+    let lo = 0, hi = value.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(value.slice(0, mid) + suffix).width <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    out = value.slice(0, lo) + suffix;
   }
-  return value.slice(0, lo) + suffix;
+  if (ellipsizeCache.size > 256) ellipsizeCache.clear();
+  ellipsizeCache.set(key, out);
+  return out;
 }
 
 export function fillTextEllipsized(ctx, text, x, y, maxW) {

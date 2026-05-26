@@ -1,7 +1,7 @@
 // Board state + pure grid operations: swap, gravity (down or up), spawn.
 
 import { GRID, TYPES, SPECIAL, SPAWN_RATES, TIME_BOMB_START } from './config.js';
-import { findMatches, wouldSwapMatch } from './matcher.js';
+import { findMatches, wouldSwapMatch, analyzeSwapShape } from './matcher.js';
 
 // Cell shape: { type: 0..TYPES-1, special: SPECIAL.*, bombCountdown: null | int, id: int }
 let nextId = 1;
@@ -204,27 +204,20 @@ export function findModestHint(g) {
           if (!colorBombFallback) colorBombFallback = t;
           continue;
         }
-        // Cheap pre-filter — skip the expensive findMatches scan for swaps
-        // that don't produce any match at all (the common case).
-        if (!wouldSwapMatch(g, t.a, t.b)) continue;
-        swap(g, t.a, t.b);
-        const m = findMatches(g, null);
-        swap(g, t.a, t.b);
-        if (m.cleared.size > 0) {
-          // Score this candidate: lower = more "modest"
-          // Plain 3 with no specials spawned → 0
-          // 4-in-row spawns line gem → 10
-          // 5-in-row spawns color bomb → 20
-          // T/L spawns area bomb → 15
-          // Larger clears get penalty too.
-          let penalty = m.cleared.size - 3; // each extra cell = +1
-          for (const s of m.toSpawn) {
-            if (s.special === SPECIAL.COLOR_BOMB) penalty += 20;
-            else if (s.special === SPECIAL.AREA_BOMB) penalty += 15;
-            else penalty += 10;
-          }
-          candidates.push({ swap: t, penalty });
-        }
+        // One localized scan instead of wouldSwapMatch + findMatches. shape
+        // gives us match status, longest run length, and T/L flag — enough to
+        // score modesty without re-scanning the full board per candidate.
+        const shape = analyzeSwapShape(g, t.a, t.b);
+        if (!shape.matched) continue;
+        // Score: lower = more "modest". Plain 3 → 0 penalty. T/L (area bomb) >
+        // 4-in-row (line gem). 5-in-row (color bomb) is the heaviest spawn.
+        // Approximation note: T-shapes are slightly under-penalized vs the
+        // previous m.cleared.size formula, but relative ordering is preserved.
+        let penalty = Math.max(0, shape.maxRun - 3);
+        if (shape.tShape)              penalty += 15;
+        else if (shape.maxRun >= 5)    penalty += 20;
+        else if (shape.maxRun === 4)   penalty += 10;
+        candidates.push({ swap: t, penalty });
       }
     }
   }

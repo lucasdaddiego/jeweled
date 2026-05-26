@@ -89,7 +89,7 @@ const en = {
   'zen.savePaintingConfirm':  'Save your painting from this Zen session?',
 
   // Classic HUD
-  'classic.level':            'L{n}',
+  'classic.level':            'Level {n}',
   'classic.moves':            'Moves: {n}',
 
   // Daily HUD
@@ -275,7 +275,7 @@ const es = {
   'zen.savePaintingConfirm':  '¿Guardar la pintura de esta sesión Zen?',
 
   // Classic HUD
-  'classic.level':            'L{n}',
+  'classic.level':            'Nivel {n}',
   'classic.moves':            'Movimientos: {n}',
 
   // Daily HUD
@@ -429,6 +429,8 @@ export function setLanguage(value) {
   _locale = newLocale;
   _nfCache = new Intl.NumberFormat(_locale);
   _dfCache = new Intl.DateTimeFormat(_locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  // Locale changed → template strings differ → cached interpolations are stale.
+  _interpolateCache.clear();
   syncDocumentLang();
 }
 
@@ -515,8 +517,23 @@ function lookup(key, locale) {
   return raw;
 }
 
+// HUD strings like 'Level {n}' / 'Moves: {n}' are interpolated every frame with
+// values that are stable for seconds. Memoize so the regex replace + String()
+// allocation only happens when (template, vars) actually changes.
+//
+// Caller contract: every existing call site passes vars whose values are
+// primitives (numbers, strings, booleans), so `'|' + k + '=' + vars[k]` produces
+// a unique key. for...in iterates string keys in insertion order per ES spec.
+const _interpolateCache = new Map();
 function interpolate(template, vars) {
-  return template.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m));
+  let key = template;
+  for (const k in vars) key += '|' + k + '=' + vars[k];
+  const cached = _interpolateCache.get(key);
+  if (cached !== undefined) return cached;
+  if (_interpolateCache.size > 256) _interpolateCache.clear();
+  const out = template.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m));
+  _interpolateCache.set(key, out);
+  return out;
 }
 
 function normalizeDateInput(date) {

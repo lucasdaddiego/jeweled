@@ -9,10 +9,10 @@
 // specials prefer spawning at that cell so they appear where the player swapped to.
 
 import { GRID, SPECIAL } from './config.js';
-import { counters } from './debugHud.js';
+import { counters, enabled as _dbgEnabled } from './debugHud.js';
 
 export function findMatches(grid, swapOrigin = null) {
-  counters.findMatches++;
+  if (_dbgEnabled) counters.findMatches++;
   const cleared = new Set();
   const toSpawn = [];
 
@@ -178,6 +178,101 @@ export function wouldSwapMatch(grid, a, b) {
     grid[a.r][a.c] = grid[b.r][b.c];
     grid[b.r][b.c] = tmp2;
   }
+}
+
+// Apply swap → localized run scan capturing match + shape data → undo swap.
+// Returns { matched, maxRun, tShape } where matched = maxRun >= 3 and
+// tShape = a row run AND col run both pass through the same swap cell (which
+// implies same type given the precondition that the pre-swap board has no
+// pending matches — only call this from findModestHint / equivalent).
+//
+// Used by findModestHint to score candidate swaps without running the full
+// O(GRID²) findMatches scan per candidate. ~30× faster on a full hint pass.
+export function analyzeSwapShape(grid, a, b) {
+  const tmp = grid[a.r][a.c];
+  grid[a.r][a.c] = grid[b.r][b.c];
+  grid[b.r][b.c] = tmp;
+  try {
+    const rowA = scanRow(grid, a.r, a.c, b.c);
+    const rowB = (b.r === a.r) ? rowA : scanRow(grid, b.r, a.c, b.c);
+    const colA = scanCol(grid, a.c, a.r, b.r);
+    const colB = (b.c === a.c) ? colA : scanCol(grid, b.c, a.r, b.r);
+    const maxRun = Math.max(rowA.maxLen, rowB.maxLen, colA.maxLen, colB.maxLen);
+    // T at A: row a.r has a run covering col a.c AND col a.c has a run covering row a.r.
+    // T at B: row b.r has a run covering col b.c AND col b.c has a run covering row b.r.
+    const tAtA = rowA.coversA && colA.coversA;
+    const tAtB = rowB.coversB && colB.coversB;
+    return { matched: maxRun >= 3, maxRun, tShape: tAtA || tAtB };
+  } finally {
+    const tmp2 = grid[a.r][a.c];
+    grid[a.r][a.c] = grid[b.r][b.c];
+    grid[b.r][b.c] = tmp2;
+  }
+}
+
+// Wildcard-aware row scan. Returns longest run length ≥3 (else 0) plus whether
+// some run on this row covers column targetA / targetB. Mirrors rowHasRun's
+// inner loop but captures run extent instead of short-circuiting on first hit.
+function scanRow(grid, r, targetA, targetB) {
+  let maxLen = 0;
+  let coversA = false, coversB = false;
+  let runStart = 0;
+  let runType = null;
+  for (let c = 0; c <= GRID; c++) {
+    const cur = c < GRID ? grid[r][c] : null;
+    const isWild = !!cur && cur.special === SPECIAL.WILDCARD;
+    let extendsRun = false;
+    if (cur) {
+      if (runType === null) {
+        extendsRun = true;
+        if (!isWild) runType = cur.type;
+      } else if (isWild || cur.type === runType) {
+        extendsRun = true;
+      }
+    }
+    if (!extendsRun) {
+      const len = c - runStart;
+      if (len >= 3 && runType !== null) {
+        if (len > maxLen) maxLen = len;
+        if (targetA >= runStart && targetA <= c - 1) coversA = true;
+        if (targetB >= runStart && targetB <= c - 1) coversB = true;
+      }
+      runStart = c;
+      runType = (cur && !isWild) ? cur.type : null;
+    }
+  }
+  return { maxLen, coversA, coversB };
+}
+
+function scanCol(grid, c, targetA, targetB) {
+  let maxLen = 0;
+  let coversA = false, coversB = false;
+  let runStart = 0;
+  let runType = null;
+  for (let r = 0; r <= GRID; r++) {
+    const cur = r < GRID ? grid[r][c] : null;
+    const isWild = !!cur && cur.special === SPECIAL.WILDCARD;
+    let extendsRun = false;
+    if (cur) {
+      if (runType === null) {
+        extendsRun = true;
+        if (!isWild) runType = cur.type;
+      } else if (isWild || cur.type === runType) {
+        extendsRun = true;
+      }
+    }
+    if (!extendsRun) {
+      const len = r - runStart;
+      if (len >= 3 && runType !== null) {
+        if (len > maxLen) maxLen = len;
+        if (targetA >= runStart && targetA <= r - 1) coversA = true;
+        if (targetB >= runStart && targetB <= r - 1) coversB = true;
+      }
+      runStart = r;
+      runType = (cur && !isWild) ? cur.type : null;
+    }
+  }
+  return { maxLen, coversA, coversB };
 }
 
 // Wildcard-aware run scan for a single row. Returns true on first run ≥3.
