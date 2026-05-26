@@ -33,6 +33,20 @@ jobs:
       - name: Build (copy sources into dist/)
         run: bash scripts/build.sh
 
+      # Parse every JS file in dist/ with `node --check`. Catches syntax
+      # errors that would otherwise ship to prod and leave the app stuck on
+      # the boot splash (e.g. duplicate `const`, missing brace, stray comma).
+      # Cheap — runs in <1s and needs no dependencies.
+      - name: Syntax-check JS bundle
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r -d '' f; do
+            node --check "$f" || { echo "::error file=$f::syntax error"; fail=1; }
+          done < <(find dist -type f -name '*.js' -print0)
+          if [ $fail -ne 0 ]; then exit 1; fi
+          echo "Syntax OK across $(find dist -type f -name '*.js' | wc -l) files"
+
       # Stamp the commit SHA into both the SW cache key (so each deploy
       # invalidates stale caches on activate) and src/build.js (so the title
       # footer shows the running build). GNU sed (ubuntu-latest); on macOS

@@ -90,7 +90,6 @@ export function draw() {
   }
 
   const backW = render.layout.isNarrow ? 56 : 76;
-  const col = render.menuColumn();
   render.drawHitButton(col.right - backW, 16, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'), buttons, cursorX, cursorY);
