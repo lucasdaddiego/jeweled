@@ -805,6 +805,17 @@ export function responsiveFont(desktopPx, minPx = 14) {
   return desktopPx;
 }
 
+// Menu scenes (level select, puzzle select, stats) share a centered content
+// column so back-buttons, titles, and grids all anchor to the same horizontal
+// bounds. Without this, wide viewports leave the back-button floating alone
+// in the corner while content sits centered far from it.
+export const MENU_COLUMN_MAX_W = 720;
+export function menuColumn() {
+  const w = Math.min(MENU_COLUMN_MAX_W, viewportW - 32);
+  const x = Math.floor((viewportW - w) / 2);
+  return { x, w, right: x + w };
+}
+
 // Draw a single power-up slot. Returns its hit rect for the caller to register.
 // charges: int (0..MAX), progressToNext: 0..1 (drawn as a ring around the icon),
 // activeMode: bool (highlights when in target mode for this powerup),

@@ -38,6 +38,12 @@ let _handlingPopState = false;
 let _firstFrameDrawn = false;
 let _swRefreshing = false;
 let _swUpdateReady = false;
+// When a 'down' event handler swaps the scene, the matching 'up' would
+// otherwise leak into the *new* scene and fire as a click on whatever button
+// happens to occupy the release coordinates. (Hit puzzleSelect from the
+// title's Puzzles tap → up landed on a puzzle tile → instant gameplay
+// launch.) This flag is set inside _swapScene and consumed by the next 'up'.
+let _swallowNextUp = false;
 
 // Debug HUD — only drawn when dbg is true (localhost or ?debug=1). Re-evaluated
 // at init so a ?debug=1 page load enables it for the whole session.
@@ -80,6 +86,10 @@ function _swapScene(name, args) {
     currentName = 'title';
   }
   if (current.enter) current.enter(args);
+  // If a pointer is still down (typical case: scene swap fired from this
+  // scene's own 'down' handler), drop the matching 'up' so it doesn't fire
+  // a stray click on whatever button now sits under the release point.
+  if (input.isPointerDown()) _swallowNextUp = true;
   // Reset crossfade so the new scene fades in over CROSSFADE_MS.
   sceneAlpha = 0;
   crossfadeT = 0;
@@ -240,6 +250,7 @@ function setupInput() {
       if (current && current.onMove) current.onMove(x, y);
     },
     onUp: (x, y) => {
+      if (_swallowNextUp) { _swallowNextUp = false; return; }
       if (dialogs.handlePointer({ type: 'up', x, y })) return;
       if (current && current.onPointer) current.onPointer({ type: 'up', x, y });
     },

@@ -84,13 +84,11 @@ export function draw() {
     if (currentPage < totalPages) currentPage++;
   });
 
-  // Back button — aligned with the grid's right edge so it doesn't float off
-  // alone on wide viewports where the centered grid is much narrower than the
-  // page. Falls back to the viewport edge on narrow screens where the grid
-  // already spans the width.
+  // Back button — anchored to the right edge of the shared menu column so
+  // it stays consistent with puzzle select and stats screens.
   const backW = render.layout.isNarrow ? 56 : 76;
-  const backX = Math.min(w - backW - 16, ox + totalW - backW);
-  drawHitButton(backX, 16, backW, 32,
+  const col = render.menuColumn();
+  drawHitButton(col.right - backW, 16, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'));
 }

@@ -170,7 +170,11 @@ export function draw() {
   render.drawText(i18n.formatNumber(Math.floor(cascade.scoreShown)), (boardX + contentR) / 2, hudY + 6, {
     font: scoreFont, align: 'center', shadow: true,
   });
-  const btnW = render.layout.isNarrow ? 56 : 76;
+  // Match the power-up panel column width on wide viewports so End sits as
+  // a square cap above the panel; fall back to standard widths otherwise.
+  const btnW = render.layout.panelSide === 'right' && render.layout.panelW > 0
+    ? render.layout.panelW
+    : (render.layout.isNarrow ? 56 : 76);
   render.drawHitButton(contentR - btnW, hudY + 2, btnW, 36, render.layout.isNarrow ? i18n.t('zen.endShort') : i18n.t('zen.end'), () => {
     // Set runEndedScore *before* any await so a racing exit() doesn't double-finalize.
     finalizeRun(cascade.score);

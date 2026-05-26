@@ -84,8 +84,8 @@ const en = {
 
   // Zen HUD
   'zen.title':                '🧘 Zen',
-  'zen.end':                  '✕ End',
-  'zen.endShort':             '✕',
+  'zen.end':                  'End',
+  'zen.endShort':             'End',
   'zen.savePaintingConfirm':  'Save your painting from this Zen session?',
 
   // Classic HUD
@@ -271,8 +271,8 @@ const es = {
   'name_entry.start':         'Comenzar',
 
   // Zen HUD
-  'zen.end':                  '✕ Salir',
-  'zen.endShort':             '✕',
+  'zen.end':                  'Salir',
+  'zen.endShort':             'Salir',
   'zen.savePaintingConfirm':  '¿Guardar la pintura de esta sesión Zen?',
 
   // Classic HUD

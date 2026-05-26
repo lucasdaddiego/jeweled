@@ -204,7 +204,12 @@ export function draw() {
     (boardX + contentR) / 2, hudY + 6,
     { font: scoreFont, align: 'center', shadow: true },
   );
-  const btnW = render.layout.isNarrow ? 56 : 76;
+  // Match the power-up panel column width on wide viewports so Back caps the
+  // panel column; fall back to standard widths when the panel is absent or
+  // sits at the bottom.
+  const btnW = render.layout.panelSide === 'right' && render.layout.panelW > 0
+    ? render.layout.panelW
+    : (render.layout.isNarrow ? 56 : 76);
   render.drawHitButton(contentR - btnW, hudY + 2, btnW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'), buttons, cursorX, cursorY);
