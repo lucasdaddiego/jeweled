@@ -131,17 +131,21 @@ export function resize() {
     layout.panelH = 0;
   }
 
-  // Board centers within the area left after subtracting HUD, optional right
-  // panel, and optional bottom panel. 20px bottom breathing room is preserved
-  // below the panel (or below the board when there's no bottom panel).
-  const availW = Math.max(1, viewportW - layout.panelW);
+  // Cell size is sized to fit board + panel together, leaving 20px bottom
+  // breathing room and a small gap between the board and a right-side panel
+  // so the two feel like one cohesive unit.
+  const panelGap = layout.panelSide === 'right' && layout.panelW > 0 ? 10 : 0;
+  const availW = Math.max(1, viewportW - layout.panelW - panelGap);
   const availH = Math.max(1, viewportH - layout.hudH - 20 - layout.panelH);
   const minDim = Math.max(1, Math.min(availW - 16, availH));
   layout.cellSize = Math.max(1, Math.floor((minDim * 0.98) / GRID));
   layout.boardSize = layout.cellSize * GRID;
-  layout.boardX = Math.floor((availW - layout.boardSize) / 2);
+  // Center the (board + gap + right-panel) unit horizontally so the panel
+  // sits adjacent to the board instead of being pushed to the viewport edge.
+  const unitW = layout.boardSize + panelGap + layout.panelW;
+  layout.boardX = Math.floor((viewportW - unitW) / 2);
   layout.boardY = layout.hudH + Math.floor((availH - layout.boardSize) / 2);
-  layout.panelX = availW;
+  layout.panelX = layout.boardX + layout.boardSize + panelGap;
   layout.panelY = layout.boardY + layout.boardSize + 10;
 
   // Invalidate cached layers — they're sized to the old layout.

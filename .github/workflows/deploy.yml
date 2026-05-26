@@ -33,10 +33,12 @@ jobs:
       - name: Build (copy sources into dist/)
         run: bash scripts/build.sh
 
-      # Rotate dist/sw.js cache key. GNU sed (ubuntu-latest); on macOS this
-      # would need `sed -i ''`. The grep guard fails the build loudly if a
-      # future sw.js refactor breaks the regex anchor.
-      - name: Bump service worker cache version
+      # Stamp the commit SHA into both the SW cache key (so each deploy
+      # invalidates stale caches on activate) and src/build.js (so the title
+      # footer shows the running build). GNU sed (ubuntu-latest); on macOS
+      # this would need `sed -i ''`. grep guards fail the build loudly if
+      # either file's anchor regex stops matching.
+      - name: Stamp build identifier
         run: |
           set -euo pipefail
           SHA8="${GITHUB_SHA::8}"
@@ -45,7 +47,13 @@ jobs:
             echo "::error::SW cache version bump did not apply. Check sw.js line 9 format."
             exit 1
           }
+          sed -i "s/^export const BUILD = 'dev';$/export const BUILD = '${SHA8}';/" dist/src/build.js
+          grep -q "^export const BUILD = '${SHA8}';$" dist/src/build.js || {
+            echo "::error::BUILD constant stamp did not apply. Check src/build.js format."
+            exit 1
+          }
           echo "SW cache key: $(grep "^const CACHE" dist/sw.js)"
+          echo "Build tag:    $(grep "^export const BUILD" dist/src/build.js)"
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

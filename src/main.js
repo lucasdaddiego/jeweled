@@ -296,14 +296,20 @@ function init() {
   // updateViaCache: 'none' so the browser never serves a cached sw.js — every load
   // re-checks for updates. Pair with a focus listener that re-checks too.
   if ('serviceWorker' in navigator) {
+    // Capture controller state BEFORE registering. If the page was uncontrolled
+    // at load (first-ever install), the controllerchange that fires when the
+    // brand-new SW claims this page isn't an "update" — there's no old code to
+    // refresh from. Without this guard, every brand-new visitor would hit an
+    // unnecessary reload as soon as they leave the title scene.
+    const hadController = !!navigator.serviceWorker.controller;
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
         .then(reg => {
-          // When a new SW takes over, reload — but defer if the user is mid-
-          // game. They'll pick up the new version next time they navigate to
-          // a safe scene (title / result / stats / etc).
+          // When a new SW takes over an *already-controlled* page, reload — but
+          // defer if the user is mid-game. They'll pick up the new version
+          // next time they navigate to a safe scene (title / result / etc).
           navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (_swRefreshing) return;
+            if (_swRefreshing || !hadController) return;
             _swUpdateReady = true;
             maybeReloadForServiceWorkerUpdate();
           });

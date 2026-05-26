@@ -15,6 +15,7 @@ const PRECACHE = [
   '/manifest.json',
   '/favicon.svg',
   '/src/main.js',
+  '/src/build.js',
   '/src/config.js',
   '/src/grid.js',
   '/src/matcher.js',

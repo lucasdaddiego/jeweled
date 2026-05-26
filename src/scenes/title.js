@@ -9,6 +9,7 @@ import { setScene, clockMs } from '../main.js';
 import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
+import { BUILD } from '../build.js';
 
 let buttons = [];          // hit-test rects: { x, y, w, h, onClick, hover }
 let nameInputWrap = null;
@@ -173,6 +174,17 @@ export function draw() {
 
   // Heatmap, centered horizontally
   drawHeatmap(state.playHistory, Math.floor((w - hmW) / 2), y, hmWeeks, hmDays, hmCell, hmGap);
+
+  // Build tag — tiny, low-contrast, bottom-right. Lets you confirm at a
+  // glance which deploy is loaded without taking up real estate. Lifted off
+  // the bottom edge by the safe-area inset so it clears the iOS home bar.
+  const sab = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0;
+  render.drawText(BUILD, w - 10, h - 6 - sab, {
+    font: '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    color: 'rgba(255,255,255,0.25)',
+    align: 'right',
+    baseline: 'bottom',
+  });
 
   if (settingsOpen) drawSettingsOverlay();
 }
