@@ -49,21 +49,33 @@ jobs:
                 'node --check "{}" 2>&1 || { echo "::error file={}::syntax error"; exit 255; }'
           echo "Syntax OK across $(find dist -type f -name '*.js' | wc -l) files"
 
-      # Cache the npm download directory so cloudflare/wrangler-action's
-      # `npm i wrangler@3` (~11s cold) finds its tarballs locally on subsequent
-      # runs (~2s warm). Static key — new wrangler 3.x patches still slot
-      # into the cache incrementally. Bump the key suffix to force a clean
-      # reinstall (e.g. on wrangler major upgrade).
+      # Cache the fully-installed wrangler tree (not just npm tarballs) so a
+      # warm run skips `npm install` entirely. Previously we cached ~/.npm
+      # under cloudflare/wrangler-action, which still paid ~7s extracting
+      # tarballs into node_modules on every run. Bump the key suffix to force
+      # a clean reinstall (e.g. on wrangler major upgrade).
       - name: Cache wrangler install
+        id: wrangler-cache
         uses: actions/cache@v4
         with:
-          path: ~/.npm
-          key: npm-wrangler-3
+          path: .wrangler-install
+          key: wrangler-3-${{ runner.os }}
 
+      - name: Install wrangler
+        if: steps.wrangler-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .wrangler-install
+          cd .wrangler-install
+          npm install wrangler@3 --no-audit --no-fund
+
+      # Run wrangler directly instead of via cloudflare/wrangler-action — the
+      # action's own version probe always reinstalls regardless of cache state.
+      # --commit-dirty=true silences the "uncommitted changes" warning that
+      # build.sh's untracked dist/ would otherwise trigger.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '3'
-          command: pages deploy dist --project-name=jeweled --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          .wrangler-install/node_modules/.bin/wrangler pages deploy dist \
+            --project-name=jeweled --branch=main --commit-dirty=true
