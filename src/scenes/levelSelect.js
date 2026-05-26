@@ -40,20 +40,23 @@ export function draw() {
   const state = storage.load();
   const highest = state.classic.highestUnlocked;
 
-  // Grid geometry (5 rows × 4 cols = 20 cells per page)
+  // Grid geometry (5 rows × 4 cols = 20 cells per page). Tile size shrinks to
+  // fit short viewports so the bottom row + pagination row are always visible
+  // without scrolling.
   const cols = 4, rows = 5;
   const gap = render.layout.isNarrow ? 10 : 14;
   const maxCellW = render.layout.isNarrow ? 84 : 110;
-  const cellW = Math.min(maxCellW, Math.floor((w - 32 - (cols - 1) * gap) / cols));
+  const topMargin = titleY + 70;
+  const bottomMargin = 100;
+  const availH = Math.max(1, h - topMargin - bottomMargin);
+  const cellByW = Math.floor((w - 32 - (cols - 1) * gap) / cols);
+  const cellByH = Math.floor((availH - (rows - 1) * gap) / rows);
+  const cellW = Math.max(40, Math.min(maxCellW, cellByW, cellByH));
   const cellH = cellW;
   const totalW = cols * cellW + (cols - 1) * gap;
   const totalH = rows * cellH + (rows - 1) * gap;
   const ox = Math.floor((w - totalW) / 2);
-  // Vertically center within the area between title-bottom and page-controls-top
-  const topMargin = titleY + 70;
-  const bottomMargin = 100;
-  const availH = h - topMargin - bottomMargin;
-  const oy = Math.max(topMargin, topMargin + Math.floor((availH - totalH) / 2));
+  const oy = topMargin + Math.max(0, Math.floor((availH - totalH) / 2));
 
   // Draw the 20 levels on the current page
   const startLevel = (currentPage - 1) * LEVELS_PER_PAGE + 1;
@@ -81,9 +84,13 @@ export function draw() {
     if (currentPage < totalPages) currentPage++;
   });
 
-  // Back button (top-right, matching other scenes)
+  // Back button — aligned with the grid's right edge so it doesn't float off
+  // alone on wide viewports where the centered grid is much narrower than the
+  // page. Falls back to the viewport edge on narrow screens where the grid
+  // already spans the width.
   const backW = render.layout.isNarrow ? 56 : 76;
-  drawHitButton(w - backW - 16, 16, backW, 32,
+  const backX = Math.min(w - backW - 16, ox + totalW - backW);
+  drawHitButton(backX, 16, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'));
 }

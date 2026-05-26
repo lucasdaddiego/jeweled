@@ -788,6 +788,15 @@ export function getViewport() { return { w: viewportW, h: viewportH }; }
 
 // Right edge of the board (handy for HUD right-alignment).
 export function boardRight() { return layout.boardX + layout.boardSize; }
+// Right edge of the whole play area — board, plus any right-side power-up
+// panel. HUD elements that should sit at the rightmost edge of the visible
+// game (e.g. an End / Back button) should anchor to this, not boardRight,
+// so they stay aligned with the panel instead of floating in the gap.
+export function contentRight() {
+  return layout.panelSide === 'right' && layout.panelW > 0
+    ? layout.panelX + layout.panelW
+    : layout.boardX + layout.boardSize;
+}
 export function boardCenterX() { return layout.boardX + layout.boardSize / 2; }
 
 // Pick a font size by viewport width (clamp for tiny phones).

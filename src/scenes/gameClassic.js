@@ -189,6 +189,7 @@ export function draw() {
   const hudY = render.layout.hudY;
   const boardX = render.layout.boardX;
   const boardR = render.boardRight();
+  const contentR = render.contentRight();
   const boardW = render.layout.boardSize;
   const titleFont = `bold ${render.responsiveFont(20)}px -apple-system, system-ui, sans-serif`;
   const scoreFont = `bold ${render.responsiveFont(18)}px -apple-system, system-ui, sans-serif`;
@@ -196,13 +197,15 @@ export function draw() {
 
   // Row 1: Level | Score / Target | Back
   render.drawText(i18n.t('classic.level', { n: levelNum }), boardX, hudY + 6, { font: titleFont, shadow: true });
+  // Center the score/target across the play area (board + right-side panel)
+  // so it stays visually between the Level label and Back button.
   render.drawText(
     `${i18n.formatNumber(Math.floor(cascade.scoreShown))} / ${i18n.formatNumber(target)}`,
-    render.boardCenterX(), hudY + 6,
+    (boardX + contentR) / 2, hudY + 6,
     { font: scoreFont, align: 'center', shadow: true },
   );
   const btnW = render.layout.isNarrow ? 56 : 76;
-  render.drawHitButton(boardR - btnW, hudY + 2, btnW, 32,
+  render.drawHitButton(contentR - btnW, hudY + 2, btnW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'), buttons, cursorX, cursorY);
 

@@ -160,16 +160,18 @@ export function draw() {
   // HUD strip: aligned to board edges so nothing overflows on narrow screens
   const hudY = render.layout.hudY;
   const boardX = render.layout.boardX;
-  const boardR = render.boardRight();
+  const contentR = render.contentRight();
   const titleFont = `bold ${render.responsiveFont(22)}px -apple-system, system-ui, sans-serif`;
   const scoreFont = `bold ${render.responsiveFont(24)}px -apple-system, system-ui, sans-serif`;
 
   render.drawText(i18n.t('zen.title'), boardX, hudY + 8, { font: titleFont, shadow: true });
-  render.drawText(i18n.formatNumber(Math.floor(cascade.scoreShown)), render.boardCenterX(), hudY + 6, {
+  // Center the score across the whole play area (board + right-side panel),
+  // not just the board, so it sits visually between the Zen title and End.
+  render.drawText(i18n.formatNumber(Math.floor(cascade.scoreShown)), (boardX + contentR) / 2, hudY + 6, {
     font: scoreFont, align: 'center', shadow: true,
   });
   const btnW = render.layout.isNarrow ? 56 : 76;
-  render.drawHitButton(boardR - btnW, hudY + 2, btnW, 36, render.layout.isNarrow ? i18n.t('zen.endShort') : i18n.t('zen.end'), () => {
+  render.drawHitButton(contentR - btnW, hudY + 2, btnW, 36, render.layout.isNarrow ? i18n.t('zen.endShort') : i18n.t('zen.end'), () => {
     // Set runEndedScore *before* any await so a racing exit() doesn't double-finalize.
     finalizeRun(cascade.score);
     if (painting.isEnabled()) offerSavePainting();
