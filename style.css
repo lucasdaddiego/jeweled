@@ -41,17 +41,6 @@ body {
   animation: bgDrift 45s ease-in-out infinite;
 }
 
-/* Visually-hidden but screen-reader-perceivable. */
-.sr-only {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 canvas#game {
   display: block;
   width: 100vw;

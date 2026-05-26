@@ -48,6 +48,7 @@ function open(config) {
   // swap), the drag would never see the matching `up` and the gem would stay
   // visually lifted. dragInput.cancel() is a no-op when nothing is active.
   dragInput.cancel();
+  if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown);
   return new Promise(resolve => {
     active = { ...config, resolve };
     buttons = [];
@@ -59,6 +60,7 @@ function settle(value) {
   const resolve = active.resolve;
   active = null;
   buttons = [];
+  if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
   resolve(value);
 }
 
@@ -131,17 +133,17 @@ export function onMove(x, y) {
   cursorY = y;
 }
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('keydown', e => {
-    if (!active) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      settle(false);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      settle(true);
-    }
-  });
+// Single named handler so open/settle can attach/detach with no rebinding.
+// Esc closes (cancel), Enter accepts. Only registered while a dialog is open.
+function onKeydown(e) {
+  if (!active) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    settle(false);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    settle(true);
+  }
 }
 
 function wrapText(ctx, text, maxW, font) {

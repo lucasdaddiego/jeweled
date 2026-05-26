@@ -31,7 +31,6 @@ export class Cascade {
     // Per-run state
     this.score = 0;
     this.scoreShown = 0;   // displayed score — lerps toward `score` for a rolling readout
-    this.movesUsed = 0;
     this.cascadeDepth = 0;
     this.gravityDir = 'down';        // for current FALL cycle
     this.gravityFlipNext = false;
@@ -55,15 +54,12 @@ export class Cascade {
     // Screen shake amplitude (px), decays each frame
     this.shakeAmp = 0;
 
-    // Bomb explosion tracking (for HUD penalty in classic)
-    this.bombsExplodedThisMove = 0;
-
     // Event callbacks (set by scene)
     this.onMatchCleared   = null; // (cells: [{r,c,type}], depth) => void
     this.onSpecialSpawned = null; // (special: SPECIAL.*) => void — once per match-promoted spawn
     this.onSpecialActivated = null; // ({r, c, special}) => void
     this.onBombExploded   = null; // (cell:{r,c}) => void  — Classic: deduct 5 moves
-    this.onMoveCommitted  = null; // ()=>void  — increment movesUsed (called once per valid swap)
+    this.onMoveCommitted  = null; // ()=>void  — called once per valid swap (scenes track their own movesLeft)
     this.onIdleReached    = null; // ()=>void  — for save-state snapshot trigger
     this.onScoreChanged   = null; // (newScore, delta) => void
     this.onReshuffle      = null; // ()=>void
@@ -346,10 +342,6 @@ export class Cascade {
 
   _afterSwap() {
     const { a, b } = this._pendingSwap;
-    // Reset per-move counters BEFORE any work so consumers reading these
-    // mid-move see a clean slate. Without this, bombsExplodedThisMove leaks
-    // its previous value into moves where no bomb actually exploded.
-    this.bombsExplodedThisMove = 0;
     // Commit grid swap
     gridSwap(this.grid, a, b);
     this.lastSwapTo = b;
@@ -362,12 +354,14 @@ export class Cascade {
     if (cellA && cellA.special === SPECIAL.COLOR_BOMB) {
       colorBombResult = {
         bombCell: a,
+        partnerCell: b,
         partnerType: cellB?.type,
         partnerSpecial: cellB?.special || null,
       };
     } else if (cellB && cellB.special === SPECIAL.COLOR_BOMB) {
       colorBombResult = {
         bombCell: b,
+        partnerCell: a,
         partnerType: cellA?.type,
         partnerSpecial: cellA?.special || null,
       };
@@ -386,7 +380,6 @@ export class Cascade {
 
     this._pendingSwap = null;
     // Valid move — commit it
-    this.movesUsed++;
     this.onMoveCommitted?.();
 
     // Decrement bombs (player move). Exploded bombs are nulled out so they
@@ -398,7 +391,6 @@ export class Cascade {
     // they're about to earn the defuse bonus via _beginResolve, not explode.
     const exploded = tickBombs(this.grid, cleared);
     if (exploded.length > 0) {
-      this.bombsExplodedThisMove = exploded.length;
       for (const e of exploded) {
         this.onBombExploded?.(e);
         this.grid[e.r][e.c] = null;
@@ -422,6 +414,23 @@ export class Cascade {
         partnerType: colorBombResult.partnerType,
         partnerSpecial: colorBombResult.partnerSpecial,
       });
+      // CB + non-CB effect-special swap: queue the partner's own effect to
+      // fire after the CB clears partner-color. The partner cell will be
+      // null in the grid by then (CB cleared it), but activateSpecial reads
+      // selfType from the queue entry so the effect still resolves. CB+CB is
+      // handled inside activateSpecial (full board wipe); WILDCARD / COIN /
+      // GRAVITY / TIME_BOMB are passive or non-effect specials and shouldn't
+      // chain a second activation.
+      const ps = colorBombResult.partnerSpecial;
+      if (ps === SPECIAL.LINE_H || ps === SPECIAL.LINE_V || ps === SPECIAL.AREA_BOMB ||
+          ps === SPECIAL.FIRE   || ps === SPECIAL.LIGHTNING || ps === SPECIAL.STAR) {
+        this.activationQueue.push({
+          r: colorBombResult.partnerCell.r,
+          c: colorBombResult.partnerCell.c,
+          special: ps,
+          type: colorBombResult.partnerType,
+        });
+      }
       if (cleared.size > 0) {
         // Incidental match alongside the CB swap — let _beginResolve handle
         // it; _afterResolve will process the queued CB activation next.
@@ -524,7 +533,6 @@ export class Cascade {
     const gemsScore = scoreForClear(cleared.size, this.cascadeDepth) * coinMultiplier;
     const total = gemsScore + defuseBonus;
     this.score += total;
-    this.onScoreChanged?.(this.score, total);
 
     // Spawn clear animations — stagger each cell along the row/col so a match
     // reads like a fuse lighting rather than a simultaneous pop.
@@ -539,7 +547,9 @@ export class Cascade {
       this._tweenClear(sortedKeys[i], TIMING.CLEAR, null, i * STAGGER_MS);
     }
 
-    // Emit event (for particles + floaters + haptic)
+    // Emit match-cleared BEFORE onScoreChanged: scenes use the callback's
+    // centroid to position the "+N" floater, so they need to receive it
+    // before the score callback fires.
     if (this.onMatchCleared) {
       const cells = [];
       for (const key of cleared) {
@@ -549,6 +559,7 @@ export class Cascade {
       }
       this.onMatchCleared(cells, this.cascadeDepth);
     }
+    this.onScoreChanged?.(this.score, total);
 
     // Shake + slowmo triggers
     if (this.cascadeDepth >= SHAKE_MIN_DEPTH) {
@@ -634,11 +645,15 @@ export class Cascade {
       this.onSpecialActivated?.({ r: a.r, c: a.c, special: a.special, targets });
       // Queue further chains
       for (const ch of chained) this.activationQueue.push(ch);
+      // Credit any TIME_BOMBs hit by the activation's clear set. Bombs that
+      // were in the *original* match are already credited by _beginResolve and
+      // nulled by _afterResolve, so we only ever see bombs caught by a chain
+      // activation here.
+      const defuseBonus = this._creditBombDefuses(cleared);
       // Score the activation
       this.cascadeDepth = Math.max(this.cascadeDepth, 1);
-      const gainedScore = scoreForClear(cleared.size, this.cascadeDepth);
+      const gainedScore = scoreForClear(cleared.size, this.cascadeDepth) + defuseBonus;
       this.score += gainedScore;
-      this.onScoreChanged?.(this.score, gainedScore);
       // Animate clear
       this.clearingCells = new Set(cleared);
       if (this.onMatchCleared) {
@@ -650,6 +665,9 @@ export class Cascade {
         }
         this.onMatchCleared(cells, this.cascadeDepth);
       }
+      // Fire score callback AFTER onMatchCleared so scenes that read the
+      // cleared centroid (lastClearCenter) have it set for the +N floater.
+      this.onScoreChanged?.(this.score, gainedScore);
       // Same staggered clear used in _beginResolve so special-gem follow-ups
       // also read as a fuse-lighting wave rather than a flat simultaneous pop.
       const ACTIVATION_STAGGER_MS = 28;
@@ -716,6 +734,22 @@ export class Cascade {
   }
 
 
+  // Sum BOMB_DEFUSE_BONUS for every TIME_BOMB still alive in the grid at the
+  // given cleared positions. _beginResolve folds this into its bigger
+  // multi-effect scan; _afterActivations calls this directly so that bombs
+  // caught by chain activations also credit the player.
+  _creditBombDefuses(cleared) {
+    let bonus = 0;
+    for (const key of cleared) {
+      const [r, c] = key.split(',').map(Number);
+      const cell = this.grid[r]?.[c];
+      if (cell && cell.special === SPECIAL.TIME_BOMB) {
+        bonus += SCORE.BOMB_DEFUSE_BONUS;
+      }
+    }
+    return bonus;
+  }
+
   _afterBombExplode() {
     this.state = STATE.IDLE;
     this.onIdleReached?.();
@@ -756,7 +790,7 @@ export class Cascade {
       }
     }
     // After the last tween (including its delay) the scene will naturally
-    // transition to IDLE via the update() loop's "no more anims" branch.
-    this.onIdleReached = this.onIdleReached || (() => { this.state = STATE.IDLE; });
+    // transition to IDLE via the update() loop's "no more anims" branch
+    // (FALLING → _afterFall → _beginSpawn → _afterSpawn → IDLE).
   }
 }

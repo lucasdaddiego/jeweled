@@ -117,6 +117,10 @@ export function exit() {
   debugHud.setActiveCascade(null);
   wakeLock.release();
   render.setPanelWidth(0);
+  // Disable painting so the next non-Zen scene's drawBoard doesn't render
+  // leftover brushstrokes underneath gems. render.drawBoard reads
+  // painting.isEnabled() globally; only gameZen ever owns the painting layer.
+  painting.setEnabled(false);
   document.body.className = '';
   if (typeof window !== 'undefined') delete window.__zen;
 }

@@ -94,7 +94,6 @@ const en = {
 
   // Daily HUD
   'daily.title':              '📅 Daily',
-  'daily.titleShort':         '📅',
   'daily.movesLeft':          'Moves left: {n}',
   'daily.replayDoesNotCount': 'Replay (does not count)',
   'daily.todayLabel':         '{date}',
@@ -418,6 +417,7 @@ export function init() {
   _locale = resolveLocale(_setting);
   _nfCache = new Intl.NumberFormat(_locale);
   _dfCache = new Intl.DateTimeFormat(_locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  syncDocumentLang();
 }
 
 export function setLanguage(value) {
@@ -429,6 +429,16 @@ export function setLanguage(value) {
   _locale = newLocale;
   _nfCache = new Intl.NumberFormat(_locale);
   _dfCache = new Intl.DateTimeFormat(_locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  syncDocumentLang();
+}
+
+// Keep <html lang> in sync with the active locale so screen readers pick the
+// right pronunciation voice (matters when the player switches to Spanish on
+// a device whose default is English, or vice versa).
+function syncDocumentLang() {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.lang = _locale;
+  }
 }
 
 export function getLanguageSetting() { return _setting; }

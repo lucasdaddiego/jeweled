@@ -4,6 +4,11 @@
 // hidden. We track an explicit "wanted" flag so we can re-acquire on
 // visibilitychange and survive tab-switches mid-session.
 
+// Single-owner model: at most one game scene is active at a time, so the
+// single `wanted` flag is sufficient. If we ever stack overlay scenes that
+// independently want the lock (e.g. a preview pane over a game scene), this
+// will need to become a reference count to avoid one scene's `release()`
+// dropping the lock that the other scene still wants.
 let lock = null;
 let wanted = false;
 

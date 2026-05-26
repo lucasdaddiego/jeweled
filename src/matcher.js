@@ -156,8 +156,8 @@ function preferSwapOrigin(swapOrigin, cells) {
 // Returns true if swapping cells a and b would create at least one match-3.
 // Only scans the up-to-2 rows and up-to-2 columns the swap touches, mirroring
 // findMatches's wildcard rules. ~30× faster than calling findMatches on the
-// full board, which is what callers like hasAnyValidMove / findValidSwap /
-// findModestHint used to do.
+// full board, which is what callers like hasAnyValidMove / findModestHint
+// used to do.
 //
 // Mutates the grid temporarily (apply swap → check → undo). Safe under JS's
 // single-threaded model; do not call concurrently with other grid readers.

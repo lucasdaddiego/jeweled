@@ -39,8 +39,10 @@ function freshProgress() {
 }
 
 export function enter(args = {}) {
-  puzzleNum = args.puzzle || 1;
-  puzzle = getPuzzle(puzzleNum);
+  // Use ?? not || so a missing puzzle id surfaces as undefined → !puzzle
+  // → redirect to puzzleSelect, instead of silently launching puzzle #1.
+  puzzleNum = args.puzzle ?? null;
+  puzzle = puzzleNum != null ? getPuzzle(puzzleNum) : null;
   if (!puzzle) { setScene('puzzleSelect'); return; }
 
   document.body.className = '';

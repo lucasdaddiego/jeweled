@@ -46,7 +46,6 @@ function defaultState() {
     playHistory: {},
     powerups: {
       charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0 },
-      lastMilestoneScore: 0,  // tracks score floor at which the last charge was awarded
     },
   };
 }
@@ -74,6 +73,11 @@ function migrate(blob, fromVersion) {
 }
 
 let cache = null;
+// Set when load() sees a future-version blob (cached tab after a deploy that
+// bumped STORAGE_VERSION). Suppresses ALL writes for the rest of the session
+// so the newer blob in localStorage survives untouched for the next reload.
+// Without this guard, saveAll() would clobber the newer blob with defaults.
+let _readOnly = false;
 
 export function load() {
   if (cache) return cache;
@@ -95,6 +99,7 @@ export function load() {
       // and don't overwrite — run on in-memory defaults this session so
       // the newer blob survives untouched for the next reload.
       cache = defaultState();
+      _readOnly = true;
       return cache;
     }
     let blob = parsed;
@@ -153,6 +158,12 @@ let _saveDirty = false;
 export function saveAll() {
   if (!cache) cache = defaultState();
   if (typeof localStorage === 'undefined') return;
+  // Refuse to persist over a future-version blob — see _readOnly comment.
+  if (_readOnly) {
+    _saveDirty = false;
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+    return;
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
   } catch (err) {
@@ -177,15 +188,6 @@ export function flush() {
   if (_saveDirty) saveAll();
 }
 
-// Shallow-merge a patch into top-level keys, then persist (debounced).
-export function save(patch) {
-  const state = load();
-  for (const k of Object.keys(patch)) {
-    state[k] = patch[k];
-  }
-  scheduleSave();
-}
-
 // Patch a single sub-key (e.g. saveKey('settings', {haptic: false}))
 export function saveKey(topKey, patch) {
   const state = load();
@@ -194,6 +196,10 @@ export function saveKey(topKey, patch) {
 }
 
 export function reset() {
+  // TODO: consider gating on !_readOnly. Today, a user on a stale tab who
+  // opens Settings → Reset progress will wipe a future-version blob from
+  // localStorage. Acceptable for now since the user explicitly opted in, but
+  // worth revisiting if we ever have data important enough to protect harder.
   cache = defaultState();
   if (typeof localStorage === 'undefined') return;
   try {

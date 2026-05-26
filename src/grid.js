@@ -188,23 +188,6 @@ export function hasAnyValidMove(g) {
   return false;
 }
 
-// Find one valid swap (for general use — e.g. checking solvability).
-export function findValidSwap(g) {
-  for (let r = 0; r < GRID; r++) {
-    for (let c = 0; c < GRID; c++) {
-      if (c + 1 < GRID) {
-        const a = { r, c }, b = { r, c: c + 1 };
-        if (isValidSwapCandidate(g, a, b)) return { a, b };
-      }
-      if (r + 1 < GRID) {
-        const a = { r, c }, b = { r: r + 1, c };
-        if (isValidSwapCandidate(g, a, b)) return { a, b };
-      }
-    }
-  }
-  return null;
-}
-
 // Find a MODEST hint: prefer plain 3-matches over 4+, 5+, or T/L shapes,
 // so the hint nudges the player without giving away the best plays.
 // Falls back to any valid swap if nothing modest exists.

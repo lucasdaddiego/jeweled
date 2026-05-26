@@ -22,18 +22,27 @@ for (let i = 0; i < FLOATER_POOL; i++) pool.push(new Floater());
 let aliveCount = 0;
 
 function spawnForCascade(depth, x, y) {
-  let text = FLOATER_LABELS[depth];
-  let fontSize = 28;
-  if (!text) {
-    if (depth >= 5) {
-      text = `MEGA x${depth}!`;
-      fontSize = 32 + Math.min(depth - 5, 8) * 2;
-    } else return;
+  // Caller (handleMatchCleared) already gates depth >= 2, so we only need
+  // labeled (FLOATER_LABELS) and MEGA branches here.
+  let text;
+  let fontSize;
+  const labeled = FLOATER_LABELS[depth];
+  if (labeled) {
+    text = labeled;
+    fontSize = 28;
+  } else {
+    // depth >= 5: MEGA tier, scale font with depth.
+    text = `MEGA x${depth}!`;
+    fontSize = 32 + Math.min(depth - 5, 8) * 2;
   }
   const f = findDead();
   if (!f) return;
   if (!f.alive) aliveCount++;
   f.x = x; f.y = y;
+  // Reset slot's fly-to-HUD trajectory state from prior 'score' reuse so the
+  // update() loop's score-only branches stay correctly gated by kind alone.
+  f.x0 = x; f.y0 = y;
+  f.targetX = null; f.targetY = null;
   f.text = text;
   f.life = f.maxLife = 700;
   f.fontSize = fontSize;

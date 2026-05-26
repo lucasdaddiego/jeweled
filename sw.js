@@ -6,7 +6,7 @@
 //
 // Bump CACHE on every deploy so old caches are swept on activate.
 
-const CACHE = 'gem-match-v32';
+const CACHE = 'gem-match-v33';
 
 const PRECACHE = [
   '/',

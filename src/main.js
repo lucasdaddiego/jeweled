@@ -63,9 +63,17 @@ let sceneAlpha = 1;          // 0 = scene invisible (black overlay), 1 = fully v
 let crossfadeT = 0;          // 0..CROSSFADE_MS — counter
 
 export function setScene(name, args = {}, opts = {}) {
-  // Auto-replace on transient sources (result → next), unless the caller
-  // explicitly chose otherwise.
-  const replace = opts.replace ?? (currentName != null && TRANSIENT_SOURCES.has(currentName));
+  // Auto-replace in two situations:
+  //   - Coming from a transient source (result → next).
+  //   - Continuing into a scene via `restoreFrom`: the snapshot can't be
+  //     serialized into history.state (too big), so pushing an entry would
+  //     leave a forward-nav stub that re-enters the scene with empty args —
+  //     hitting IDLE → snapshotSaveState → overwrites the real save with a
+  //     fresh L1 / 0-score snapshot. Replacing avoids the orphan entry.
+  const replace = opts.replace ?? (
+    (args && args.restoreFrom != null) ||
+    (currentName != null && TRANSIENT_SOURCES.has(currentName))
+  );
   _swapScene(name, args);
   // Mirror the scene change into browser history so back/forward navigate scenes.
   // Skip when we're handling a popstate (avoid pushing while restoring).
@@ -255,6 +263,10 @@ function setupInput() {
       if (current && current.onPointer) current.onPointer({ type: 'up', x, y });
     },
     onCancel: (x, y) => {
+      // Consume any pending swallow here too, symmetric with 'up' — otherwise
+      // a pointercancel (OS gesture, blur) between _swapScene and the real
+      // 'up' would leak the flag onto the next gesture's release.
+      if (_swallowNextUp) _swallowNextUp = false;
       if (dialogs.handlePointer({ type: 'cancel', x, y })) return;
       if (current && current.onPointer) current.onPointer({ type: 'cancel', x, y });
     },

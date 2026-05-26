@@ -16,7 +16,7 @@ check_absent() {
   fi
 }
 
-check_absent "found locale formatting outside src/i18n.js" '\.toLocale(String|DateString|TimeString|DateString|LowerCase|UpperCase)?\(' -g '!i18n.js'
+check_absent "found locale formatting outside src/i18n.js" '\.toLocale(String|DateString|TimeString|LowerCase|UpperCase)?\(' -g '!i18n.js'
 check_absent "found direct native dialogs" 'window\.(confirm|alert)\('
 check_absent "found untranslated puzzle fields outside puzzle/i18n data" '\bpuzzle\.(name|hint)\b' -g '!puzzles.js' -g '!i18n.js'
 check_absent "found untranslated achievement fields outside achievement/i18n data" '\ba\.(name|desc)\b' -g '!achievements.js'

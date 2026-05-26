@@ -347,7 +347,6 @@ export function drawBoard(grid, opts = {}) {
   const shakeAmp = REDUCED_MOTION ? 0 : (opts.shakeAmp || 0);
   const settings = opts.settings || {};
   const hint = opts.hint || null;
-  const selected = opts.selected || null;
   // Idle wobble — after 5s of inactivity the board gently sways like it's
   // breathing. ±2deg max, slow sinusoid. Disabled under reduced-motion.
   const idleMs = REDUCED_MOTION ? 0 : (opts.idleMs || 0);
@@ -387,13 +386,8 @@ export function drawBoard(grid, opts = {}) {
       const alpha = cell.clearAlpha != null ? cell.clearAlpha : 1;
       if (alpha < 0.02) continue;
 
-      // Selection / hint highlight
-      if (selected && selected.r === r && selected.c === c) {
-        // Breath pulse — slow scale of opacity so the selected cell feels alive.
-        const sPulse = 0.5 + 0.5 * Math.sin(clockMs() / 340);
-        ctx.fillStyle = `rgba(255,255,255,${0.14 + sPulse * 0.10})`;
-        ctx.fillRect(x, y, cs, cs);
-      }
+      // Hint highlight (no `selected` codepath today — drag input lifts the
+      // dragged gem via scaleX/scaleY instead of a board-level selection).
       if (hint && ((hint.a.r === r && hint.a.c === c) || (hint.b.r === r && hint.b.c === c))) {
         // Soft expanding glow ring around the two hinted gems plus a gentle
         // body pulse so the hint reads as "look here" without being shouty.

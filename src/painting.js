@@ -5,8 +5,13 @@ let ctx = null;
 let enabled = false;
 
 export function init(width = 1080, height = 1080) {
-  canvas = new OffscreenCanvas(width, height);
-  ctx = canvas.getContext('2d');
+  // Idempotent: reuse the existing OffscreenCanvas across Zen sessions to
+  // avoid re-allocating a fresh ~4.5MB buffer (1080×1080×4 bytes) each enter.
+  // Re-init with different dimensions allocates fresh.
+  if (!canvas || canvas.width !== width || canvas.height !== height) {
+    canvas = new OffscreenCanvas(width, height);
+    ctx = canvas.getContext('2d');
+  }
   clear();
 }
 
