@@ -26,7 +26,7 @@ import * as storage from './storage.js';
 
 const en = {
   // Common, reused everywhere
-  'common.back':       '← Back',
+  'common.back':       'Back',
   'common.backShort':  '←',
   'common.close':      'Close',
   'common.ok':         'OK',
@@ -218,7 +218,7 @@ const en = {
 
 const es = {
   // Common
-  'common.back':       '← Volver',
+  'common.back':       'Volver',
   'common.backShort':  '←',
   'common.close':      'Cerrar',
   'common.ok':         'Aceptar',

@@ -40,22 +40,24 @@ export function draw() {
   const state = storage.load();
   const highest = state.classic.highestUnlocked;
 
-  // Grid geometry (5 rows × 4 cols = 20 cells per page). Tile size shrinks to
-  // fit short viewports so the bottom row + pagination row are always visible
-  // without scrolling.
+  // Grid geometry (5 rows × 4 cols = 20 cells per page). Lives inside the
+  // shared menu column so its right edge aligns with the Back button. Tile
+  // size shrinks to fit short viewports so the bottom row + pagination row
+  // are always visible without scrolling.
+  const col = render.menuColumn();
   const cols = 4, rows = 5;
   const gap = render.layout.isNarrow ? 10 : 14;
   const maxCellW = render.layout.isNarrow ? 84 : 110;
   const topMargin = titleY + 70;
   const bottomMargin = 100;
   const availH = Math.max(1, h - topMargin - bottomMargin);
-  const cellByW = Math.floor((w - 32 - (cols - 1) * gap) / cols);
+  const cellByW = Math.floor((col.w - (cols - 1) * gap) / cols);
   const cellByH = Math.floor((availH - (rows - 1) * gap) / rows);
   const cellW = Math.max(40, Math.min(maxCellW, cellByW, cellByH));
   const cellH = cellW;
   const totalW = cols * cellW + (cols - 1) * gap;
   const totalH = rows * cellH + (rows - 1) * gap;
-  const ox = Math.floor((w - totalW) / 2);
+  const ox = col.x + Math.floor((col.w - totalW) / 2);
   const oy = topMargin + Math.max(0, Math.floor((availH - totalH) / 2));
 
   // Draw the 20 levels on the current page
@@ -84,10 +86,11 @@ export function draw() {
     if (currentPage < totalPages) currentPage++;
   });
 
-  // Back button — anchored to the right edge of the shared menu column so
-  // it stays consistent with puzzle select and stats screens.
+  // Back button — anchored to the shared menu-column right edge for
+  // consistency with puzzle select and stats. The level grid is narrower than
+  // the column (tile-size cap keeps tiles small), but anchoring to the column
+  // keeps Back from overlapping the centered title on wide viewports.
   const backW = render.layout.isNarrow ? 56 : 76;
-  const col = render.menuColumn();
   drawHitButton(col.right - backW, 16, backW, 32,
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('title'));

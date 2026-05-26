@@ -44,12 +44,16 @@ export function draw() {
     { font: '14px sans-serif', align: 'center', color: 'rgba(255,255,255,0.6)' },
   );
 
-  const cols = Math.min(3, Math.max(2, Math.floor((w - 32) / 230)));
+  // Grid lives inside the shared menu column so its right edge aligns with
+  // the Back button. Cells fill the column width (no fixed cap) so wide
+  // viewports don't leave a gap between the rightmost card and Back.
+  const col = render.menuColumn();
+  const cols = Math.min(3, Math.max(2, Math.floor(col.w / 230)));
   const gap = 14;
-  const cellW = Math.min(220, Math.floor((w - 32 - (cols - 1) * gap) / cols));
+  const cellW = Math.floor((col.w - (cols - 1) * gap) / cols);
   const cellH = 110;
   const totalW = cols * cellW + (cols - 1) * gap;
-  const ox = Math.floor((w - totalW) / 2);
+  const ox = col.x + Math.floor((col.w - totalW) / 2);
   const listTop = h * 0.18;
   const listBottom = h - 20;
   const visibleH = Math.max(120, listBottom - listTop);
