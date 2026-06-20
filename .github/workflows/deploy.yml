@@ -25,7 +25,7 @@ jobs:
       # Shallow clone — we only need the working tree, not history. Saves
       # ~1s on cold clones of larger repos.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
@@ -39,7 +39,7 @@ jobs:
       # exactly the locked versions and fails if package.json and the lockfile
       # disagree — which fixes the old floating-version + static-cache-key setup.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
