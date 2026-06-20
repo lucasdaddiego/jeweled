@@ -1,0 +1,30 @@
+{
+  "name": "jeweled",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.",
+  "license": "MIT",
+  "author": "Lucas Daddiego",
+  "homepage": "https://jeweled.pages.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasdaddiego/jeweled.git"
+  },
+  "scripts": {
+    "serve": "npx --yes serve .",
+    "build": "bash scripts/build.sh",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name=jeweled",
+    "audit:i18n": "bash scripts/i18n-audit.sh",
+    "icons": "node scripts/build-icons.mjs",
+    "check": "find src -name '*.js' -print0 | xargs -0 -n1 node --check"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "html-minifier-terser": "7.2.0",
+    "wrangler": "4.103.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

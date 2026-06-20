@@ -7,15 +7,20 @@
 //   icons/icon-maskable.png    — full-bleed background, gem in 80% safe zone
 //   favicon.svg                — vector favicon for browser tabs
 //
-// Requires @resvg/resvg-js, resolved from /tmp/favicon-gen/node_modules (the
-// repo intentionally has no package.json — this is a one-shot generator).
+// Requires @resvg/resvg-js (a one-shot generator dependency, declared in
+// scripts/package.json so it stays out of the lean root/CI toolchain). Install
+// it once, then run from the repo root:
+//   cd scripts && npm install
+//   node scripts/build-icons.mjs      # or: npm run icons
 
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const require = createRequire('/tmp/favicon-gen/');
+// Resolve relative to this script so it works on any machine — node walks up
+// from scripts/ to find @resvg/resvg-js in scripts/node_modules (or the root).
+const require = createRequire(import.meta.url);
 const { Resvg } = require('@resvg/resvg-js');
 
 const here = dirname(fileURLToPath(import.meta.url));

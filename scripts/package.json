@@ -1,0 +1,10 @@
+{
+  "name": "jeweled-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-shot dev tooling for Jeweled (icon generation). Kept separate from the root so the native @resvg/resvg-js binary stays out of the lean CI toolchain.",
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2"
+  }
+}

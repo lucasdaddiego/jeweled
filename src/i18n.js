@@ -98,6 +98,12 @@ const en = {
   'daily.replayDoesNotCount': 'Replay (does not count)',
   'daily.todayLabel':         '{date}',
 
+  // Combo floaters (cascade depth)
+  'combo.2':                  'NICE!',
+  'combo.3':                  'GREAT!',
+  'combo.4':                  'AMAZING!',
+  'combo.mega':               'MEGA x{n}!',
+
   // Blitz HUD
   'blitz.title':              '⚡ Blitz',
   'blitz.seconds':            '{n}s',
@@ -281,6 +287,12 @@ const es = {
   // Daily HUD
   'daily.movesLeft':          'Movimientos: {n}',
   'daily.replayDoesNotCount': 'Repetición (no cuenta)',
+
+  // Combo floaters (cascade depth)
+  'combo.2':                  '¡BIEN!',
+  'combo.3':                  '¡GENIAL!',
+  'combo.4':                  '¡INCREÍBLE!',
+  'combo.mega':               '¡MEGA x{n}!',
 
   // Blitz HUD (no key overrides — uses English 'Xs' format)
   'blitz.seconds':            '{n}s',

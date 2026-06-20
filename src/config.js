@@ -93,13 +93,9 @@ export const STORAGE_VERSION = 1;
 // Player name max length
 export const NAME_MAX_LEN = 16;
 
-// Cascade-depth thresholds
-export const FLOATER_LABELS = {
-  2: 'NICE!',
-  3: 'GREAT!',
-  4: 'AMAZING!',
-  // 5+: 'MEGA x{n}!'
-};
+// Cascade-depth thresholds. The combo floater labels (NICE!/GREAT!/AMAZING!
+// and MEGA x{n}!) are localized via i18n keys combo.2/combo.3/combo.4 and
+// combo.mega — see src/floaters.js and src/i18n.js.
 export const SHAKE_MIN_DEPTH  = 3;
 export const SLOWMO_MIN_DEPTH = 5;
 

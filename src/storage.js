@@ -92,8 +92,16 @@ export function load() {
       return cache;
     }
     const parsed = JSON.parse(raw);
-    const fromVersion = Number(parsed.version) || 0;
-    if (fromVersion > STORAGE_VERSION) {
+    const rawVersion = Number(parsed.version);
+    // A positive integer version means the blob came from a versioned build.
+    // Anything else (missing / 0 / NaN) is a *pre-versioning* save: treat it as
+    // already current-shape and let deepMerge backfill new keys, rather than
+    // routing it through migrate() — which would find no MIGRATIONS[0] step,
+    // throw, and wipe the player's entire progress.
+    const versioned = Number.isInteger(rawVersion) && rawVersion > 0;
+    const fromVersion = versioned ? rawVersion : STORAGE_VERSION;
+
+    if (versioned && fromVersion > STORAGE_VERSION) {
       // Stale client meeting a newer save (e.g. user opened a cached tab
       // after a deploy that bumped the version). Don't migrate backwards
       // and don't overwrite — run on in-memory defaults this session so
@@ -109,17 +117,21 @@ export function load() {
       try {
         blob = migrate(parsed, fromVersion);
       } catch (err) {
-        console.warn('storage.migrate failed, resetting:', err);
-        cache = defaultState();
-        saveAll();
-        return cache;
+        // A missing migration step is a build-time mistake, not a reason to
+        // destroy the player's data. Fall back to a best-effort deepMerge:
+        // safe for additive changes (the common case); only a genuine
+        // rename/restructure would have needed the missing step. The archive
+        // backup above preserves the exact pre-merge blob either way.
+        console.warn('storage.migrate incomplete, preserving data via deepMerge:', err);
+        blob = parsed;
       }
     }
     // deepMerge fills any leaf keys that were added since the blob was
     // written. Additive changes don't need a version bump — bump only for
     // renames/removals/restructures handled by MIGRATIONS.
     cache = deepMerge(defaultState(), blob);
-    if (fromVersion < STORAGE_VERSION) saveAll();
+    cache.version = STORAGE_VERSION;   // stamp forward (covers pre-versioned / 0 blobs)
+    if (!versioned || fromVersion < STORAGE_VERSION) saveAll();
     return cache;
   } catch (err) {
     console.warn('storage.load failed, resetting:', err);

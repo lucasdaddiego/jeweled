@@ -1,6 +1,23 @@
 # Cloudflare Pages publish output. Built by scripts/build.sh; never committed.
 dist/
 
+# Wrangler local cache (account id / project metadata). Regenerated on demand
+# by `wrangler`; must never be tracked. CI deploys with CLOUDFLARE_ACCOUNT_ID
+# from repo secrets, so it doesn't need this.
+.wrangler/
+
+# Dependencies (root dev tools + the icon-generator's own deps).
+node_modules/
+scripts/node_modules/
+
+# Legacy ad-hoc CI install dirs (kept ignored so a local `git add -A` can't
+# stage them if an old workflow run left one behind).
+.build-tools-install/
+.wrangler-install/
+
+# Local AI work-plan — never part of the published repo.
+PLAN.md
+
 # Local Claude Code harness config (launch settings, per-machine permission
 # allowlist). Tracked outside the repo since it's editor/agent-tooling, not
 # app code or shared project state.

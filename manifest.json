@@ -3,6 +3,8 @@
   "name": "Jeweled",
   "short_name": "Jeweled",
   "description": "A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.",
+  "lang": "en",
+  "dir": "ltr",
   "categories": ["games", "puzzles"],
   "start_url": "/",
   "scope": "/",

@@ -29,29 +29,26 @@ jobs:
         with:
           fetch-depth: 1
 
-      # No setup-node step: ubuntu-latest already ships Node 20+ pre-installed,
-      # which is all we need for `node --check`. cloudflare/wrangler-action
-      # manages its own Node runtime separately. Skipping setup saves ~3-5s.
+      # Fail fast on localization regressions before doing any build work.
+      # Pure bash + grep, so it needs no dependencies.
+      - name: i18n audit
+        run: bash scripts/i18n-audit.sh
+
+      # Install the pinned dev toolchain (esbuild, html-minifier-terser,
+      # wrangler) from package-lock.json. `npm ci` is reproducible — it installs
+      # exactly the locked versions and fails if package.json and the lockfile
+      # disagree — which fixes the old floating-version + static-cache-key setup.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build (copy sources into dist/)
         run: bash scripts/build.sh
-
-      # Cache esbuild + html-minifier-terser the same way we cache wrangler:
-      # full node_modules tree, not just the npm tarball cache. Warm runs skip
-      # `npm install` entirely. Bump the key suffix to force a clean reinstall.
-      - name: Cache build tools
-        id: build-tools-cache
-        uses: actions/cache@v4
-        with:
-          path: .build-tools-install
-          key: build-tools-1-${{ runner.os }}
-
-      - name: Install build tools
-        if: steps.build-tools-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p .build-tools-install
-          cd .build-tools-install
-          npm install esbuild@0.24 html-minifier-terser@7 --no-audit --no-fund
 
       # Bundle src/*.js into a single minified module, then minify CSS, HTML,
       # and the service worker. The bundler tree-shakes unreachable code and
@@ -65,8 +62,8 @@ jobs:
       - name: Bundle, minify, obfuscate
         run: |
           set -euo pipefail
-          ESBUILD=.build-tools-install/node_modules/.bin/esbuild
-          HTMLMIN=.build-tools-install/node_modules/.bin/html-minifier-terser
+          ESBUILD=node_modules/.bin/esbuild
+          HTMLMIN=node_modules/.bin/html-minifier-terser
 
           # Bundle the ES-module entrypoint. --format=esm preserves the
           # `<script type="module">` contract; --target=es2022 keeps the output
@@ -93,6 +90,21 @@ jobs:
           # but that's harmless now — no path under /src/ will ever match.
           sed -i "/^  '\/src\//d" dist/sw.js
           sed -i "s|'/favicon.svg',|'/favicon.svg',\n  '/main.bundle.js',|" dist/sw.js
+
+          # Assert the rewrites actually applied. These seds are coupled to the
+          # source formatting (indent, trailing comma); if upstream changes break
+          # a match, the sed silently no-ops and — because dist/src was just
+          # rm -rf'd — index.html would 404 the whole app while CI stays green.
+          # Fail loud instead. (Anchored '^[[:space:]]*'/src/' matches PRECACHE
+          # entries only, not the const CACHEABLE_PREFIXES = ['/src/', ...] line.)
+          grep -q '/main.bundle.js' dist/index.html \
+            || { echo "::error::index.html was not repointed to /main.bundle.js"; exit 1; }
+          ! grep -q '/src/main.js' dist/index.html \
+            || { echo "::error::index.html still references the unbundled /src/main.js"; exit 1; }
+          grep -q "'/main.bundle.js'," dist/sw.js \
+            || { echo "::error::sw.js precache is missing the /main.bundle.js entry"; exit 1; }
+          ! grep -qE "^[[:space:]]*'/src/" dist/sw.js \
+            || { echo "::error::sw.js still precaches /src/ paths after rewrite"; exit 1; }
 
           # Minify CSS and the service worker in place. --allow-overwrite lets
           # esbuild read and write the same path in one invocation.
@@ -125,25 +137,6 @@ jobs:
                 'node --check "{}" 2>&1 || { echo "::error file={}::syntax error"; exit 255; }'
           echo "Syntax OK across $(find dist -type f -name '*.js' | wc -l) files"
 
-      # Cache the fully-installed wrangler tree (not just npm tarballs) so a
-      # warm run skips `npm install` entirely. Previously we cached ~/.npm
-      # under cloudflare/wrangler-action, which still paid ~7s extracting
-      # tarballs into node_modules on every run. Bump the key suffix to force
-      # a clean reinstall (e.g. on wrangler major upgrade).
-      - name: Cache wrangler install
-        id: wrangler-cache
-        uses: actions/cache@v4
-        with:
-          path: .wrangler-install
-          key: wrangler-3-${{ runner.os }}
-
-      - name: Install wrangler
-        if: steps.wrangler-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p .wrangler-install
-          cd .wrangler-install
-          npm install wrangler@3 --no-audit --no-fund
-
       # Run wrangler directly instead of via cloudflare/wrangler-action — the
       # action's own version probe always reinstalls regardless of cache state.
       # --commit-dirty=true silences the "uncommitted changes" warning that
@@ -153,5 +146,5 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          .wrangler-install/node_modules/.bin/wrangler pages deploy dist \
+          node_modules/.bin/wrangler pages deploy dist \
             --project-name=jeweled --branch=main --commit-dirty=true

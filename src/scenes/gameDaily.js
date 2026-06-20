@@ -88,25 +88,29 @@ export function enter(args = {}) {
 export function exit() { drag.unbind(); debugHud.setActiveCascade(null); wakeLock.release(); document.body.className = ''; }
 
 function finalize() {
-  const today = todayISO();
   const s = storage.load();
   const isNewBest = !isReplay && cascade.score > s.daily.bestEver;
-  const patch = {
-    bestEver: Math.max(s.daily.bestEver, cascade.score),
-    history: {
-      ...s.daily.history,
-      [today]: { score: cascade.score, movesUsed: DAILY_MOVES - movesLeft },
-    },
-  };
+  // A replay "does not count" (the HUD says so): it must not raise bestEver,
+  // bump totals, or overwrite the day's recorded result. Only a real,
+  // first-of-day submission writes progress — and it's keyed by the date the
+  // board was SEEDED from (dailyDate, captured in enter()), never a re-read of
+  // today(). A run that starts before midnight and ends after must still count
+  // for the day it was actually played, with the seed that produced the score.
   if (!isReplay) {
-    patch.todaySubmittedDate = today;
-    patch.totalDaysPlayed = s.daily.totalDaysPlayed + 1;
+    storage.saveKey('daily', {
+      bestEver: Math.max(s.daily.bestEver, cascade.score),
+      todaySubmittedDate: dailyDate,
+      totalDaysPlayed: s.daily.totalDaysPlayed + 1,
+      history: {
+        ...s.daily.history,
+        [dailyDate]: { score: cascade.score, movesUsed: DAILY_MOVES - movesLeft },
+      },
+    });
     storage.recordPlayDay(cascade.score);
   }
-  storage.saveKey('daily', patch);
   achievements.notifyMode('daily');
   setScene('result', {
-    mode: 'daily', outcome: 'done', score: cascade.score, date: today,
+    mode: 'daily', outcome: 'done', score: cascade.score, date: dailyDate,
     isReplay, isNewBest, prevBest,
   });
 }
@@ -119,7 +123,6 @@ export function update(dt) {
 }
 
 export function draw() {
-  const { w, h } = render.getViewport();
   render.clearFrame();
   buttons = [];
 

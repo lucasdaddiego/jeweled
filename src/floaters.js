@@ -1,6 +1,6 @@
 // Combo text floaters — pooled.
 
-import { FLOATER_POOL, FLOATER_LABELS } from './config.js';
+import { FLOATER_POOL } from './config.js';
 import * as i18n from './i18n.js';
 
 class Floater {
@@ -22,17 +22,16 @@ for (let i = 0; i < FLOATER_POOL; i++) pool.push(new Floater());
 let aliveCount = 0;
 
 function spawnForCascade(depth, x, y) {
-  // Caller (handleMatchCleared) already gates depth >= 2, so we only need
-  // labeled (FLOATER_LABELS) and MEGA branches here.
+  // Caller (handleMatchCleared) already gates depth >= 2. Labels are localized:
+  // combo.2/3/4 → NICE!/GREAT!/AMAZING!, combo.mega → MEGA x{n}! for depth 5+.
   let text;
   let fontSize;
-  const labeled = FLOATER_LABELS[depth];
-  if (labeled) {
-    text = labeled;
+  if (depth <= 4) {
+    text = i18n.t(`combo.${depth}`);
     fontSize = 28;
   } else {
     // depth >= 5: MEGA tier, scale font with depth.
-    text = `MEGA x${depth}!`;
+    text = i18n.t('combo.mega', { n: depth });
     fontSize = 32 + Math.min(depth - 5, 8) * 2;
   }
   const f = findDead();

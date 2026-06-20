@@ -112,7 +112,6 @@ export function update(dt) {
 }
 
 export function draw() {
-  const { w, h } = render.getViewport();
   render.clearFrame();
   buttons = [];
 
