@@ -11,6 +11,9 @@ import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
 import { BUILD } from '../build.js';
 
+// Public source repository — linked from the title footer.
+const REPO_URL = 'https://github.com/lucasdaddiego/jeweled';
+
 let buttons = [];          // hit-test rects: { x, y, w, h, onClick, hover }
 let nameInputWrap = null;
 let settingsOpen = false;
@@ -187,6 +190,37 @@ export function draw() {
     align: 'right',
     baseline: 'bottom',
   });
+
+  // Source-code link — tiny, bottom-left, mirroring the build tag opposite it.
+  // Opens the public repo in a new tab. The click runs synchronously inside the
+  // pointerdown gesture (input.js → onPointer), so window.open isn't blocked.
+  {
+    const ctx = render.ctxRef();
+    const label = i18n.t('title.viewSource');
+    ctx.save();
+    ctx.font = '11px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    const lw = ctx.measureText(label).width;
+    const lx = 10;
+    const ly = h - 6 - sab;
+    const lTop = ly - 13;
+    const hover = cursorX >= lx - 6 && cursorX <= lx + lw + 6 && cursorY >= lTop && cursorY <= ly + 3;
+    ctx.fillStyle = hover ? 'rgba(190,160,255,0.95)' : 'rgba(255,255,255,0.42)';
+    ctx.fillText(label, lx, ly);
+    // Underline to signal the link affordance (no CSS cursor on canvas).
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly + 1.5);
+    ctx.lineTo(lx + lw, ly + 1.5);
+    ctx.stroke();
+    ctx.restore();
+    buttons.push({
+      x: lx - 6, y: lTop, w: lw + 12, h: (ly + 4) - lTop,
+      onClick: () => window.open(REPO_URL, '_blank', 'noopener,noreferrer'),
+    });
+  }
 
   if (settingsOpen) drawSettingsOverlay();
 }

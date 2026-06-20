@@ -50,6 +50,7 @@ const en = {
   'title.continueSubtitleClassic': 'L{level} · {score}',
   'title.continueSubtitleZen':     '{score} pts',
   'title.streak':          'streak',
+  'title.viewSource':      'View source',
   'title.zen':             '🧘  Zen',
   'title.classic':         '🎯  Classic',
   'title.daily':           '📅  Daily',
@@ -247,6 +248,7 @@ const es = {
   'title.continueSubtitleClassic': 'L{level} · {score}',
   'title.continueSubtitleZen':     '{score} pts',
   'title.streak':          'racha',
+  'title.viewSource':      'Ver código',
   // Mode chips stay branded English by design.
   'title.zenBest':         'Mejor: {score}',
   'title.zenEndless':      'Infinito · siempre resoluble',
