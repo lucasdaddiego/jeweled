@@ -4,7 +4,7 @@ A polished match-3 puzzle game — **Zen, Classic, Daily, Blitz, and Puzzles**.
 Built as a fast, offline-capable PWA with vanilla JavaScript and an HTML Canvas
 renderer — no framework, no runtime dependencies.
 
-🎮 **Play it live:** https://jeweled.pages.dev
+🎮 **Play it live:** https://jeweled.daddiego.com.ar
 
 ![Jeweled](icons/icon-512.png)
 
