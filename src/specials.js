@@ -22,23 +22,30 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
 
   switch (special) {
     case SPECIAL.LINE_H: {
+      // Only count/clear LIVE cells. A follow-up special sweeping a lane an
+      // earlier wave already emptied must not inflate the depth-multiplied
+      // score (cascade scores cleared.size) or play clear tweens on empty
+      // cells. The activating cell is added unconditionally below, matching
+      // COLOR_BOMB/STAR/LIGHTNING.
       for (let cc = 0; cc < GRID; cc++) {
-        cleared.add(`${r},${cc}`);
         const cell = grid[r][cc];
+        if (cell) cleared.add(`${r},${cc}`);
         if (cell && cell.special && (cc !== c) && !chainedHas(chained, r, cc)) {
           chained.push({ r, c: cc, special: cell.special, type: cell.type });
         }
       }
+      cleared.add(`${r},${c}`);
       break;
     }
     case SPECIAL.LINE_V: {
       for (let rr = 0; rr < GRID; rr++) {
-        cleared.add(`${rr},${c}`);
         const cell = grid[rr][c];
+        if (cell) cleared.add(`${rr},${c}`);
         if (cell && cell.special && (rr !== r) && !chainedHas(chained, rr, c)) {
           chained.push({ r: rr, c, special: cell.special, type: cell.type });
         }
       }
+      cleared.add(`${r},${c}`);
       break;
     }
     case SPECIAL.AREA_BOMB: {
@@ -46,13 +53,14 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
         for (let dc = -1; dc <= 1; dc++) {
           const nr = r + dr, nc = c + dc;
           if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
-          cleared.add(`${nr},${nc}`);
           const cell = grid[nr][nc];
+          if (cell) cleared.add(`${nr},${nc}`);
           if (cell && cell.special && (nr !== r || nc !== c) && !chainedHas(chained, nr, nc)) {
             chained.push({ r: nr, c: nc, special: cell.special, type: cell.type });
           }
         }
       }
+      cleared.add(`${r},${c}`);
       break;
     }
     case SPECIAL.COLOR_BOMB: {

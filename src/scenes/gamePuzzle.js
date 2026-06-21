@@ -10,7 +10,7 @@ import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard } from '../grid.js';
 import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
@@ -46,6 +46,7 @@ export function enter(args = {}) {
   if (!puzzle) { setScene('puzzleSelect'); return; }
 
   document.body.className = '';
+  clearEffects();   // drop any still-alive FX from the previous run before first draw
   const rng = mulberry32(strHash(`puzzle:${puzzleNum}:v1`));
   grid = createBoard(rng);
   cascade = new Cascade(grid, { mode: 'puzzle', rng });

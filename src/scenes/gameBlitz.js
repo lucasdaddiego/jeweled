@@ -11,7 +11,7 @@ import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard } from '../grid.js';
 import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
@@ -30,6 +30,7 @@ let lastClearCenter = null;
 
 export function enter() {
   document.body.className = '';
+  clearEffects();   // drop any still-alive FX from the previous run before first draw
   grid = createBoard();
   cascade = new Cascade(grid, { mode: 'blitz' });
   timeLeftMs = BLITZ_DURATION_MS;

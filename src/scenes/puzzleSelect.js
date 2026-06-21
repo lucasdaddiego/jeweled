@@ -76,7 +76,7 @@ export function draw() {
     const y = listTop + row * (cellH + gap) - scrollY;
     if (y + cellH < listTop - 4 || y > listBottom + 4) continue;
     const isDone = !!completed[String(p.id)];
-    drawPuzzleTile(x, y, cellW, cellH, p, isDone);
+    drawPuzzleTile(x, y, cellW, cellH, p, isDone, listTop, listBottom);
   }
   ctx.restore();
 
@@ -97,7 +97,7 @@ export function draw() {
     () => setScene('title'), buttons, cursorX, cursorY);
 }
 
-function drawPuzzleTile(x, y, w, h, puzzle, done) {
+function drawPuzzleTile(x, y, w, h, puzzle, done, clipTop, clipBottom) {
   const hover = cursorX >= x && cursorX <= x + w && cursorY >= y && cursorY <= y + h;
   const ctx = render.ctxRef();
   ctx.save();
@@ -131,7 +131,12 @@ function drawPuzzleTile(x, y, w, h, puzzle, done) {
   }
 
   ctx.restore();
-  buttons.push({ x, y, w, h, onClick: () => setScene('gamePuzzle', { puzzle: puzzle.id }) });
+  // Clamp the hit-rect to the visible (clipped) band. ctx.clip() only affects
+  // drawing, not buttons[]: an unclamped rect would let a deliberate tap in the
+  // clipped strip above/below the list launch a puzzle the user can't see.
+  const ry = Math.max(y, clipTop);
+  const rb = Math.min(y + h, clipBottom);
+  if (rb > ry) buttons.push({ x, y: ry, w, h: rb - ry, onClick: () => setScene('gamePuzzle', { puzzle: puzzle.id }) });
 }
 
 export function onPointer(evt) {

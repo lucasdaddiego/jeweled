@@ -423,6 +423,10 @@ let _locale = 'en';      // resolved locale: 'en' | 'es'
 // allocate a fresh formatter for every formatNumber call.
 let _nfCache = null;
 let _dfCache = null;
+// Memoized DateTimeFormat instances for opts-based formatDate() calls, keyed by
+// JSON.stringify(opts). Without this, title.draw() (every rAF on narrow
+// viewports) constructs a fresh ICU formatter ~60×/s. Cleared on locale change.
+const _dfOptsCache = new Map();
 
 // ----- Public API -----
 
@@ -431,6 +435,7 @@ export function init() {
   _locale = resolveLocale(_setting);
   _nfCache = new Intl.NumberFormat(_locale);
   _dfCache = new Intl.DateTimeFormat(_locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  _dfOptsCache.clear();
   syncDocumentLang();
 }
 
@@ -443,8 +448,10 @@ export function setLanguage(value) {
   _locale = newLocale;
   _nfCache = new Intl.NumberFormat(_locale);
   _dfCache = new Intl.DateTimeFormat(_locale, { year: 'numeric', month: 'short', day: 'numeric' });
-  // Locale changed → template strings differ → cached interpolations are stale.
+  // Locale changed → template strings differ → cached interpolations and the
+  // opts-keyed date formatters are stale.
   _interpolateCache.clear();
+  _dfOptsCache.clear();
   syncDocumentLang();
 }
 
@@ -493,7 +500,15 @@ export function formatDate(date, opts) {
   const normalized = normalizeDateInput(date);
   if (!(normalized instanceof Date) || Number.isNaN(normalized.getTime())) return String(date ?? '');
   if (!_dfCache) return String(date);
-  if (opts) return new Intl.DateTimeFormat(_locale, opts).format(normalized);
+  if (opts) {
+    const key = JSON.stringify(opts);
+    let fmt = _dfOptsCache.get(key);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat(_locale, opts);
+      _dfOptsCache.set(key, fmt);
+    }
+    return fmt.format(normalized);
+  }
   return _dfCache.format(normalized);
 }
 

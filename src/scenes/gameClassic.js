@@ -12,7 +12,7 @@ import * as achievements from '../achievements.js';
 import * as overlay from './powerupOverlay.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard, deserializeGrid, serializeGrid } from '../grid.js';
 import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
@@ -37,6 +37,7 @@ let milestoneFloor = 0;
 
 export function enter(args = {}) {
   document.body.className = '';
+  clearEffects();   // drop any still-alive FX from the previous run before first draw
 
   let entryAnim = false;
   if (args.restoreFrom) {

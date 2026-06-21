@@ -210,7 +210,13 @@ function drawDebugHud() {
 function setupVisibility() {
   document.addEventListener('visibilitychange', () => {
     paused = document.hidden;
-    if (!paused) lastFrameTime = performance.now();
+    if (!paused) { lastFrameTime = performance.now(); return; }
+    // Going background: persist pending debounced writes now. iOS can freeze or
+    // discard the tab after 'hidden' without ever firing a reliable 'pagehide',
+    // which would otherwise drop the session's most important write (end-of-run
+    // best score / unlock). Idempotent with the pagehide handler — flush()
+    // no-ops when nothing is dirty.
+    try { storage.flush(); } catch {}
   });
 }
 

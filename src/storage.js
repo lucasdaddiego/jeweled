@@ -208,11 +208,15 @@ export function saveKey(topKey, patch) {
 }
 
 export function reset() {
-  // TODO: consider gating on !_readOnly. Today, a user on a stale tab who
-  // opens Settings → Reset progress will wipe a future-version blob from
-  // localStorage. Acceptable for now since the user explicitly opted in, but
-  // worth revisiting if we ever have data important enough to protect harder.
   cache = defaultState();
+  // The user explicitly wiped localStorage, so there's no newer/future-version
+  // blob left to protect — clear the read-only guard (set by load() on a stale
+  // tab after a version bump). Without this, every post-reset write would
+  // early-return and the fresh session would silently persist nothing. Also
+  // drop any pending debounced write aimed at the now-deleted data.
+  _readOnly = false;
+  _saveDirty = false;
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.removeItem(STORAGE_KEY);

@@ -10,11 +10,20 @@ import * as input from './input.js';
 import { counters, enabled as _dbgEnabled } from './debugHud.js';
 import { clockMs } from './main.js';
 
-// Honor user's reduced-motion preference. Read once at module init; if it
-// flips at runtime the effect is gradual rather than abrupt — fine for a game.
-const REDUCED_MOTION = typeof window !== 'undefined' && window.matchMedia
+// Honor the user's reduced-motion preference, LIVE — drawBoard reads
+// `reducedMotion` each frame and a MediaQueryList listener keeps it current, so
+// toggling the OS accessibility setting takes effect without a reload (for an
+// a11y toggle, "gradual until reload" effectively means never).
+let reducedMotion = typeof window !== 'undefined' && window.matchMedia
   ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
   : false;
+if (typeof window !== 'undefined' && window.matchMedia) {
+  const _rmQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const _onReducedMotion = (e) => { reducedMotion = e.matches; };
+  // addEventListener is the modern API; older Safari only has addListener.
+  if (_rmQuery.addEventListener) _rmQuery.addEventListener('change', _onReducedMotion);
+  else if (_rmQuery.addListener) _rmQuery.addListener(_onReducedMotion);
+}
 
 // Module-level state, populated by setupCanvas + buildAtlas
 let canvas = null;
@@ -98,6 +107,12 @@ export function setupCanvas() {
   ctx = canvas.getContext('2d');
   resize();
   window.addEventListener('resize', scheduleResize);
+  // iOS URL-bar collapse/expand and device rotation change the visible viewport
+  // without always firing window 'resize' — but the CSS 100dvh canvas box
+  // follows them, so layout.* (used by screenToCell hit-testing) and the canvas
+  // pixel dims would go stale, mis-scaling the board and shifting touch targets.
+  window.addEventListener('orientationchange', scheduleResize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleResize);
 }
 
 function scheduleResize() {
@@ -377,12 +392,12 @@ export function drawBoardBg() {
 // Apply screen shake + draw board layer (painting -> gems -> overlays -> eyes -> particles -> floaters)
 export function drawBoard(grid, opts = {}) {
   if (_dbgEnabled) counters.drawBoard++;
-  const shakeAmp = REDUCED_MOTION ? 0 : (opts.shakeAmp || 0);
+  const shakeAmp = reducedMotion ? 0 : (opts.shakeAmp || 0);
   const settings = opts.settings || {};
   const hint = opts.hint || null;
   // Idle wobble — after 5s of inactivity the board gently sways like it's
   // breathing. ±2deg max, slow sinusoid. Disabled under reduced-motion.
-  const idleMs = REDUCED_MOTION ? 0 : (opts.idleMs || 0);
+  const idleMs = reducedMotion ? 0 : (opts.idleMs || 0);
   const wobbleK = idleMs > 5000 ? Math.min(1, (idleMs - 5000) / 1500) : 0;
   const wobbleAngle = wobbleK * 0.02 * Math.sin(clockMs() / 1200);  // ~1.15° max
 

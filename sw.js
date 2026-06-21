@@ -137,6 +137,19 @@ self.addEventListener('fetch', e => {
         }
         return resp;
       })
-      .catch(() => caches.match(e.request).then(r => r || Response.error()))
+      .catch(() => caches.match(e.request).then(r => {
+        if (r) return r;
+        // Offline and this exact URL wasn't cached. For a navigation, fall back
+        // to the cached app shell so the SPA still boots instead of returning an
+        // unusable network-error Response that wedges the page on the boot splash
+        // (e.g. when an install-time precache fetch for index.html transiently
+        // failed but install still completed).
+        if (e.request.mode === 'navigate') {
+          return caches.match('/')
+            .then(shell => shell || caches.match('/index.html'))
+            .then(shell => shell || Response.error());
+        }
+        return Response.error();
+      }))
   );
 });

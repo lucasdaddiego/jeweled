@@ -15,7 +15,17 @@ let wanted = false;
 async function tryRequest() {
   if (lock || typeof navigator === 'undefined' || !navigator.wakeLock) return;
   try {
-    lock = await navigator.wakeLock.request('screen');
+    const l = await navigator.wakeLock.request('screen');
+    // request() is async: by the time it resolves the caller may have already
+    // release()d (wanted=false) or the page may have hidden. release() is
+    // synchronous and only acts on an assigned `lock`, so without this re-check
+    // the just-acquired lock would be orphaned — the screen stays awake on the
+    // menu, draining battery, until the next hide or clean game exit.
+    if (!wanted || (typeof document !== 'undefined' && document.visibilityState !== 'visible')) {
+      try { l.release(); } catch { /* ignore */ }
+      return;
+    }
+    lock = l;
     lock.addEventListener('release', () => {
       lock = null;
       if (wanted && typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -48,4 +58,14 @@ if (typeof document !== 'undefined') {
       tryRequest();
     }
   });
+  // Desktop: alt-tab / window blur can release the lock while visibilityState
+  // stays 'visible', so visibilitychange never fires on return. Re-acquire on
+  // window focus too. (Mobile relies on visibilitychange above.)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => {
+      if (wanted && document.visibilityState === 'visible' && !lock) {
+        tryRequest();
+      }
+    });
+  }
 }

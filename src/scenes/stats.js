@@ -175,6 +175,11 @@ export function onPointer(evt) {
     dragStartScroll = scrollY;
   } else if (evt.type === 'up') {
     isPointerDown = false;
+  } else if (evt.type === 'cancel') {
+    // OS pointercancel (gesture/blur) mid-drag: clear the flag so a stray later
+    // pointermove can't recompute scrollY from a stale drag origin. Mirrors
+    // puzzleSelect's handling.
+    isPointerDown = false;
   }
 }
 

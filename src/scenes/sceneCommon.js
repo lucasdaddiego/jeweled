@@ -19,6 +19,18 @@ export function tickEffects(dt) {
   bolts.update(dt);
 }
 
+// Reset every per-frame effect pool. Game scenes call this from enter() so a
+// fresh board never flashes the *previous* run's still-alive floaters/sparks:
+// draw() runs before update() on the first frame, and these pools are
+// module-level singletons that otherwise persist across scene changes. The
+// per-pool clear() helpers already exist; nothing else invokes them.
+export function clearEffects() {
+  particles.clear();
+  floaters.clear();
+  waves.clear();
+  bolts.clear();
+}
+
 // Compute the next hint value. Returns:
 //   - the existing hint when the cascade is mid-action (or hint already shown);
 //   - a freshly-computed hint when the cascade has been idle long enough;
