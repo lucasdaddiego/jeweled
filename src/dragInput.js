@@ -14,13 +14,12 @@ const COMMIT_THRESHOLD = 0.35; // fraction of a cell to count as a directional c
 
 let grid = null;
 let cascade = null;
-// Active drag: { source:{r,c}, startX, startY, cellRef,
-//                partnerCell, partnerR, partnerC }
+// Active drag: { source:{r,c}, startX, startY, cellRef }
 let active = null;
 
 export function bind(g, c) { grid = g; cascade = c; active = null; }
 export function unbind() {
-  if (active) clearRender(active.cellRef, active.partnerCell);
+  if (active) clearRender(active.cellRef);
   grid = null; cascade = null; active = null;
 }
 
@@ -38,7 +37,6 @@ function down(x, y) {
   if (!cellRef) return;
   active = {
     source: cell, startX: x, startY: y, cellRef,
-    partnerCell: null, partnerR: 0, partnerC: 0,
   };
   // Lift on touch — the gem grows slightly so the finger feels anchored.
   cellRef.scaleX = 1.08;
@@ -77,12 +75,11 @@ function up(x, y) {
   // silently returns false and the gem can be left visually offset until the
   // next bounceBack call.
   if (!cascade || cascade.state !== STATE.IDLE) {
-    if (active.cellRef) {
-      active.cellRef.renderRow = null;
-      active.cellRef.renderCol = null;
-      active.cellRef.scaleX = 1;
-      active.cellRef.scaleY = 1;
-    }
+    // cellRef is always set here (down() bails when the tapped cell is empty).
+    active.cellRef.renderRow = null;
+    active.cellRef.renderCol = null;
+    active.cellRef.scaleX = 1;
+    active.cellRef.scaleY = 1;
     active = null;
     return;
   }
@@ -117,7 +114,7 @@ function up(x, y) {
     // Below threshold or out of bounds: bounce the dragged gem back to grid.
     if (cascade && cascade.bounceBack) {
       cascade.bounceBack(active.source);
-    } else if (active.cellRef) {
+    } else {
       active.cellRef.renderRow = null;
       active.cellRef.renderCol = null;
     }
@@ -125,14 +122,13 @@ function up(x, y) {
   active = null;
 }
 
-function clearRender(a, b) {
-  if (a) { a.renderRow = null; a.renderCol = null; a.scaleX = 1; a.scaleY = 1; }
-  if (b) { b.renderRow = null; b.renderCol = null; b.scaleX = 1; b.scaleY = 1; }
+function clearRender(a) {
+  a.renderRow = null; a.renderCol = null; a.scaleX = 1; a.scaleY = 1;
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 export function cancel() {
-  if (active) clearRender(active.cellRef, null);
+  if (active) clearRender(active.cellRef);
   active = null;
 }

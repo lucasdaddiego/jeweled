@@ -1,0 +1,18 @@
+# Continuous integration for pull requests and feature branches. Pushes to
+# main are validated by deploy.yml instead (which runs the same reusable test
+# job as a gate before deploying), so this workflow ignores main to avoid a
+# duplicate run.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml

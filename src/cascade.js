@@ -18,7 +18,6 @@ export const STATE = {
   SPAWNING:            'SPAWNING',
   REVERTING:           'REVERTING',
   BOUNCING:            'BOUNCING',
-  BOMB_EXPLODE:        'BOMB_EXPLODE',
 };
 
 export class Cascade {
@@ -230,20 +229,6 @@ export class Cascade {
     }
   }
 
-  _tweenCellPop(cell, duration, onDone) {
-    cell.popScale = 0;
-    const tween = new Tween({
-      from: 0, to: 1, duration, ease: easings.easeOutBack,
-      onUpdate: (k) => { cell.popScale = k; },
-      onDone: () => {
-        cell.popScale = null;
-        this.anims.delete(cell.id);
-        if (onDone) onDone();
-      },
-    });
-    this.anims.set(cell.id, { tween, kind: 'pop' });
-  }
-
   _tweenClear(cellKey, duration, onDone, delayMs = 0) {
     // Stash on the cell so render can read it. Drop the previous `fade` closure
     // object — on big cascades that allocated dozens of small objects per wave.
@@ -289,7 +274,6 @@ export class Cascade {
     let stillAnimating = false;
     for (const [id, entry] of this.anims) {
       entry.tween.update(effDt);
-      if (entry.onTick) entry.onTick(entry.tween.value);
       if (entry.tween.done) this.anims.delete(id);
       else stillAnimating = true;
     }
@@ -330,7 +314,6 @@ export class Cascade {
       case STATE.ACTIVATING_SPECIALS: this._afterActivations(); break;
       case STATE.FALLING: this._afterFall(); break;
       case STATE.SPAWNING: this._afterSpawn(); break;
-      case STATE.BOMB_EXPLODE: this._afterBombExplode(); break;
       case STATE.BOUNCING:
         // Safety net: bounce tween's onDone normally returns to IDLE.
         // Fallback to IDLE if we ever reach this with no animation pending.
@@ -446,7 +429,6 @@ export class Cascade {
     }
 
     if (cleared.size === 0) {
-      // Shouldn't happen but safe
       this.state = STATE.IDLE;
       this.onIdleReached?.();
       return;
@@ -748,11 +730,6 @@ export class Cascade {
       }
     }
     return bonus;
-  }
-
-  _afterBombExplode() {
-    this.state = STATE.IDLE;
-    this.onIdleReached?.();
   }
 
   // Scene-entrance animation: every cell drops in from above into its final

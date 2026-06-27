@@ -6,6 +6,7 @@
 // scene polls and renders them.
 
 import * as storage from './storage.js';
+import { SPECIAL } from './config.js';
 
 // Display strings live in i18n under achievement.<id>.name / .desc. Storage
 // only persists the achievement ID + unlock timestamp, so the IDs below are
@@ -126,7 +127,7 @@ function bumpCounter(key, delta) {
 
 // === Notification hooks (called from cascade / scene callbacks) ===
 
-export function notifyMatchCleared(cellCount, depth, specialsCleared = []) {
+export function notifyMatchCleared(cellCount, depth) {
   const total = bumpCounter('totalMatches', cellCount);
   unlock('first_match');
   if (total >= 100)    unlock('matches_100');
@@ -138,9 +139,9 @@ export function notifyMatchCleared(cellCount, depth, specialsCleared = []) {
 }
 
 export function notifySpecialSpawned(special) {
-  if (special === 'COLOR_BOMB') unlock('special_color');
-  if (special === 'AREA_BOMB')  unlock('special_area');
-  if (special === 'STAR')       unlock('special_star');
+  if (special === SPECIAL.COLOR_BOMB) unlock('special_color');
+  if (special === SPECIAL.AREA_BOMB)  unlock('special_area');
+  if (special === SPECIAL.STAR)       unlock('special_star');
 }
 
 export function notifyLevelWin(level) {

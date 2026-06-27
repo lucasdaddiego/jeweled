@@ -1,0 +1,46 @@
+# Reusable CI test job: install the pinned toolchain, fail fast on i18n
+# regressions, syntax-check every source file, then run the Vitest suite with
+# the 100% coverage gate (thresholds live in vitest.config.js). Called by
+# ci.yml (pull requests + feature branches) and by deploy.yml as the gate that
+# must pass before anything ships to production.
+name: Test
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      # Pinned dev toolchain from package-lock.json; cache keyed on the lockfile.
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Pure bash + grep — no dependency on the install succeeding.
+      - name: i18n audit
+        run: bash scripts/i18n-audit.sh
+
+      # Parse every src/*.js with `node --check` before running the suite.
+      - name: Syntax-check sources
+        run: npm run check
+
+      # Vitest under jsdom. `npm run coverage` enforces the high coverage floor
+      # configured in vitest.config.js (statements/functions/lines >= 99%,
+      # branches >= 98%), so this step fails the build on a real regression.
+      - name: Unit tests + coverage gate
+        run: npm run coverage

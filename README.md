@@ -1,5 +1,13 @@
 # Jeweled
 
+[![Deploy](https://github.com/lucasdaddiego/jeweled/actions/workflows/deploy.yml/badge.svg)](https://github.com/lucasdaddiego/jeweled/actions/workflows/deploy.yml)
+[![Coverage ≥99%](https://img.shields.io/badge/coverage-%E2%89%A599%25-brightgreen)](#testing)
+![PWA installable](https://img.shields.io/badge/PWA-installable-5a0fc8)
+![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
+![Vanilla JS](https://img.shields.io/badge/vanilla-JS-f7df1e?logo=javascript&logoColor=black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Play live](https://img.shields.io/badge/play-live-success)](https://jeweled.daddiego.com.ar)
+
 A polished match-3 puzzle game — **Zen, Classic, Daily, Blitz, and Puzzles**.
 Built as a fast, offline-capable PWA with vanilla JavaScript and an HTML Canvas
 renderer — no framework, no runtime dependencies.
@@ -30,6 +38,7 @@ full English/Spanish localization.
 - **Persistence**: `localStorage` behind a small versioned-schema wrapper with forward migrations (`src/storage.js`).
 - **i18n**: `en` / `es` with auto-detection (`src/i18n.js`).
 - **Hosting**: Cloudflare Pages, auto-deployed from `main` via GitHub Actions.
+- **Tested**: [Vitest](https://vitest.dev) + jsdom with a stubbed Canvas 2D context; ~99% coverage enforced as a CI gate (`src/main.js`, `src/render.js`, every scene and the cascade engine all covered).
 
 ## Run locally
 
@@ -52,7 +61,7 @@ python3 -m http.server 8080
 ## Build & deploy
 
 ```bash
-npm install            # dev tools only (esbuild, html-minifier-terser, wrangler)
+npm install            # dev tools only (esbuild, html-minifier-terser, wrangler, vitest)
 npm run build          # assemble + SHA-stamp dist/ via scripts/build.sh
 npx wrangler pages dev dist     # preview the built output locally
 ```
@@ -70,6 +79,24 @@ CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy
 
 In CI these are provided as the repo secrets `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID`.
+
+## Testing
+
+The game logic and the entire render/scene layer are covered by a **Vitest**
+suite that runs headless under **jsdom** with a stubbed Canvas 2D context — see
+[`test/setup.js`](test/setup.js) and [`test/helpers.js`](test/helpers.js).
+
+```bash
+npm test               # run the suite once
+npm run test:watch     # watch mode
+npm run coverage       # suite + coverage report
+```
+
+Coverage is enforced as a CI gate (statements/functions/lines ≥ 99%, branches
+≥ 98% — the small remainder is unreachable defensive code kept in the source).
+Every pull request runs the suite via [`ci.yml`](.github/workflows/ci.yml), and
+a production deploy is **blocked unless the same gate passes** (the `deploy`
+job depends on it).
 
 ## Project structure
 
@@ -93,6 +120,8 @@ scripts/
   build.sh          Assemble dist/ and stamp the commit SHA
   build-icons.mjs   Regenerate app icons/favicon from inline SVG
   i18n-audit.sh     Lint for untranslated strings / native dialogs
+test/               Vitest suite (jsdom + stubbed canvas) — one file per module
+vitest.config.js    Test runner + coverage-gate config
 ```
 
 ## npm scripts
@@ -105,11 +134,15 @@ scripts/
 | `npm run audit:i18n` | Check for localization regressions. |
 | `npm run icons` | Regenerate icons (needs `cd scripts && npm install` once — see script header). |
 | `npm run check` | `node --check` every `src/*.js`. |
+| `npm test` | Run the Vitest suite once. |
+| `npm run test:watch` | Vitest in watch mode. |
+| `npm run coverage` | Suite + coverage report (the CI gate). |
 
 ## Contributing
 
-Issues and PRs are welcome. If you touch user-facing strings, run
-`npm run audit:i18n` first — it flags untranslated text and native dialogs.
+Issues and PRs are welcome. Run `npm test` before opening a PR — CI runs the
+suite + coverage gate on every pull request. If you touch user-facing strings,
+also run `npm run audit:i18n` (it flags untranslated text and native dialogs).
 
 ## License
 

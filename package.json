@@ -17,12 +17,18 @@
     "deploy": "npm run build && wrangler pages deploy dist --project-name=jeweled",
     "audit:i18n": "bash scripts/i18n-audit.sh",
     "icons": "node scripts/build-icons.mjs",
-    "check": "find src -name '*.js' -print0 | xargs -0 -n1 node --check"
+    "check": "find src -name '*.js' -print0 | xargs -0 -n1 node --check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "esbuild": "0.25.12",
+    "@vitest/coverage-v8": "4.1.9",
+    "esbuild": "0.28.1",
     "html-minifier-terser": "7.2.0",
-    "wrangler": "4.103.0"
+    "jsdom": "29.1.1",
+    "vitest": "4.1.9",
+    "wrangler": "4.105.0"
   },
   "engines": {
     "node": ">=22"

@@ -141,8 +141,8 @@ export function load() {
 }
 
 function deepMerge(base, overlay) {
-  // Missing overlay → keep base.
-  if (overlay === null || overlay === undefined) return base;
+  // Missing overlay (null or undefined) → keep base.
+  if (overlay == null) return base;
   // Type mismatch (base is a plain object but overlay is a scalar/array/null, or
   // vice versa): keep base. This prevents a corrupted localStorage value (e.g.
   // settings=null) from replacing a structured default and crashing callers.
@@ -190,7 +190,9 @@ function scheduleSave() {
   if (_saveTimer) return;
   _saveTimer = setTimeout(() => {
     _saveTimer = null;
-    if (_saveDirty) saveAll();
+    // No dirty-check needed: the only writers of _saveDirty=false (saveAll,
+    // reset) both cancel this timer, so it can only fire with a pending write.
+    saveAll();
   }, 250);
 }
 

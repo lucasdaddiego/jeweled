@@ -26,7 +26,8 @@ export function draw() {
   if (args.mode === 'classic') {
     if (args.outcome === 'win') {
       title = i18n.t('result.classicWin');
-      const stars = '★'.repeat(args.stars) + '☆'.repeat(3 - args.stars);
+      const n = Math.max(0, Math.min(3, args.stars | 0));   // clamp; '★'.repeat(-1) would throw
+      const stars = '★'.repeat(n) + '☆'.repeat(3 - n);
       subtitle = `${stars}\n${i18n.t('result.classicSubtitleWin', { score: i18n.formatNumber(args.score), target: i18n.formatNumber(args.target) })}`;
     } else {
       title = i18n.t('result.classicLose');

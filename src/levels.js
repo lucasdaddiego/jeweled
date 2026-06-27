@@ -1,10 +1,10 @@
-// 100 Classic levels. Score target escalates; move budget tightens gradually.
+// 300 Classic levels. Score target escalates; move budget tightens gradually.
 // Tiers (just for orientation, not enforced in code):
 //   L1–10  Tutorial      |  L11–20 Mid-game
 //   L21–35 Advanced      |  L36–50 Expert
 //   L51–70 Master        |  L71–90 Grandmaster
 //   L91–100 Legendary
-// Levels 1–50 are hand-tuned. 51–100 are generated below with ~4.5% target growth.
+// Levels 1–50 are hand-tuned. 51–300 are generated below (see the growth tiers).
 
 const HAND_TUNED = [
   // Tutorial / warm-up

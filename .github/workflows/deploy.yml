@@ -18,14 +18,21 @@ permissions:
   contents: read
 
 jobs:
+  # Gate: install + i18n audit + syntax check + Vitest with the coverage floor.
+  # Deploy only runs if this passes, so a coverage/test regression blocks
+  # production.
+  test:
+    uses: ./.github/workflows/test.yml
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       # Shallow clone — we only need the working tree, not history. Saves
       # ~1s on cold clones of larger repos.
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -39,7 +46,7 @@ jobs:
       # exactly the locked versions and fails if package.json and the lockfile
       # disagree — which fixes the old floating-version + static-cache-key setup.
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
