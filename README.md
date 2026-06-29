@@ -37,7 +37,7 @@ full English/Spanish localization.
 - **PWA**: installable, works offline via a service worker with a SHA-versioned cache; web app manifest with maskable icons.
 - **Persistence**: `localStorage` behind a small versioned-schema wrapper with forward migrations (`src/storage.js`).
 - **i18n**: `en` / `es` with auto-detection (`src/i18n.js`).
-- **Hosting**: Cloudflare Pages, auto-deployed from `main` via GitHub Actions.
+- **Hosting**: Cloudflare Pages, auto-deployed from `master` via GitHub Actions.
 - **Tested**: [Vitest](https://vitest.dev) + jsdom with a stubbed Canvas 2D context; ~99% coverage enforced as a CI gate (`src/main.js`, `src/render.js`, every scene and the cascade engine all covered).
 
 ## Run locally
@@ -66,7 +66,7 @@ npm run build          # assemble + SHA-stamp dist/ via scripts/build.sh
 npx wrangler pages dev dist     # preview the built output locally
 ```
 
-Production deploys are automatic: **push to `main`** and the
+Production deploys are automatic: **push to `master`** and the
 [`deploy.yml`](.github/workflows/deploy.yml) workflow assembles `dist/`,
 bundles `src/` into one minified ES module with esbuild, minifies CSS/HTML/SW,
 syntax-checks the output, and ships it to Cloudflare Pages.

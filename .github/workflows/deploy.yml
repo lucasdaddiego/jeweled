@@ -1,5 +1,5 @@
 # Deploys dist/ to the Cloudflare Pages project "jeweled" on every push to
-# main (and on manual dispatch). scripts/build.sh stamps the commit SHA into
+# master (and on manual dispatch). scripts/build.sh stamps the commit SHA into
 # the service-worker cache key and the BUILD constant during the build step,
 # using $GITHUB_SHA — no extra CI logic needed.
 
@@ -7,7 +7,7 @@ name: Deploy to Cloudflare Pages
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
@@ -154,4 +154,4 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           node_modules/.bin/wrangler pages deploy dist \
-            --project-name=jeweled --branch=main --commit-dirty=true
+            --project-name=jeweled --branch=master --commit-dirty=true
