@@ -10,8 +10,11 @@ import * as storage from '../src/storage.js';
 import * as debugHud from '../src/debugHud.js';
 import * as overlay from '../src/scenes/powerupOverlay.js';
 import * as drag from '../src/dragInput.js';
+import * as i18n from '../src/i18n.js';
 import { setScene } from '../src/main.js';
 import { makeEmptyGrid, newCell, serializeGrid } from '../src/grid.js';
+import * as gridM from '../src/grid.js';
+import { mulberry32 } from '../src/rng.js';
 import { STATE } from '../src/cascade.js';
 import { SPECIAL } from '../src/config.js';
 import { getLevel, starsFor, LEVELS } from '../src/levels.js';
@@ -48,6 +51,14 @@ function plantedSerial() {
 function movesLabel(spy) {
   const call = spy.mock.calls.find(c => typeof c[0] === 'string' && c[0].startsWith('Moves:'));
   return call ? call[0] : null;
+}
+
+// Seed Math.random (the classic cascade's rng) for tests whose assertions
+// depend on how far the post-swap cascade runs: unseeded spawns occasionally
+// chain past the level-1 target (or a milestone) and flip the outcome.
+function seedRandom(seed = 0xC0FFEE) {
+  const rnd = mulberry32(seed);
+  vi.spyOn(Math, 'random').mockImplementation(() => rnd());
 }
 
 async function freshClassic() {
@@ -174,6 +185,7 @@ describe('cascade callbacks', () => {
 
 describe('swap → match → moves/score → idle snapshot (integration via pointer)', () => {
   it('a valid drag scores, spends a move, snapshots, and is not yet win/lose', () => {
+    seedRandom();   // keep the cascade below the level-1 target (500)
     classic.enter({ restoreFrom: { grid: plantedSerial(), level: 1, movesLeft: 30, score: 0 } });
     const c = debugHud.activeCascade();
     expect(c.state).toBe(STATE.IDLE);
@@ -335,7 +347,7 @@ describe('onPointer + Back button + overlay routing', () => {
     expect(overlay.isModalOpen()).toBe(true);
     const slotSpy = vi.spyOn(render, 'drawPowerupSlot');
     classic.draw();
-    const m0 = slotSpy.mock.calls[4];             // first milestone-popup slot
+    const m0 = slotSpy.mock.calls[5];             // first milestone-popup slot (after the 5 panel slots)
     classic.onPointer({ type: 'down', x: m0[0] + m0[2] / 2, y: m0[1] + m0[3] / 2 });
     expect(storage.load().powerups.charges.shuffle).toBe(1);
     expect(overlay.isModalOpen()).toBe(false);
@@ -379,5 +391,196 @@ describe('onPointer + Back button + overlay routing', () => {
     const dh = vi.spyOn(drag, 'handle');
     classic.onPointer({ type: 'down', x: 4, y: 4 });
     expect(dh).not.toHaveBeenCalled();
+  });
+});
+
+// Pull the drawn ice-counter HUD call ([text, x, y, opts]) out of a drawText spy.
+function iceLabel(spy, n) {
+  return spy.mock.calls.find(c => c[0] === i18n.t('classic.ice', { n }));
+}
+
+describe('ice levels (level 5: corners layout)', () => {
+  it('enter shows the ice counter; a clear AT an iced cell melts one layer', () => {
+    classic.enter({ level: 5 });
+    const c = debugHud.activeCascade();
+    const spy = vi.spyOn(render, 'drawText');
+    classic.draw();
+    expect(iceLabel(spy, 4)).toBeTruthy();          // corners layout: 4 frost cells
+    // One iced corner + one plain cell in the clear: only the corner melts.
+    c.onMatchCleared([
+      { r: 0, c: 0, type: 1, special: null },
+      { r: 3, c: 3, type: 1, special: null },
+    ], 1);
+    spy.mockClear();
+    classic.draw();
+    const call = iceLabel(spy, 3);
+    expect(call).toBeTruthy();
+    expect(call[3].color).toBe('#8fd1ff');          // ice remains -> frosty blue
+  });
+
+  it('reaching the score target with ice remaining does not win; melting it all does', () => {
+    classic.enter({ level: 5 });
+    const c = debugHud.activeCascade();
+    const target = getLevel(5).targetScore;
+    c.score = target;                                // score condition met…
+    c.onIdleReached();
+    expect(setScene).not.toHaveBeenCalled();         // …but 4 iced cells remain
+    // Specials and matches at the iced corners melt them all: an activation
+    // melts its own cell AND its targets; one without targets melts just itself.
+    c.onSpecialActivated({ r: 0, c: 0, special: SPECIAL.AREA_BOMB, targets: [{ r: 0, c: 7 }] });
+    c.onSpecialActivated({ r: 7, c: 0, special: SPECIAL.COLOR_BOMB });
+    c.onMatchCleared([{ r: 7, c: 7, type: 1, special: null }], 1);
+    const spy = vi.spyOn(render, 'drawText');
+    classic.draw();
+    expect(iceLabel(spy, 0)[3].color).toBe('#5fd068'); // fully melted -> green
+    c.onIdleReached();                               // now the win can finalize
+    expect(setScene).toHaveBeenCalledWith('result',
+      expect.objectContaining({ mode: 'classic', outcome: 'win', score: target, level: 5, target, stars: starsFor(target, target) }));
+    expect(storage.load().classic.levels['5'].bestScore).toBe(target);
+    expect(storage.load().classic.highestUnlocked).toBe(6);
+    expect(storage.load().classic.saveState).toBeNull();
+  });
+
+  it('the idle snapshot persists the remaining ice cells and restore rebuilds exactly those', () => {
+    // The duplicate [7,7] entry must not inflate the counter (initIce dedupe guard).
+    classic.enter({ restoreFrom: { grid: plantedSerial(), level: 5, movesLeft: 12, score: 100, milestoneFloor: 0, ice: [[0, 0], [7, 7], [7, 7]] } });
+    const c = debugHud.activeCascade();
+    const spy0 = vi.spyOn(render, 'drawText');
+    classic.draw();
+    expect(iceLabel(spy0, 2)).toBeTruthy();                         // dedupe held: 2, not 3
+    spy0.mockRestore();
+    c.onMatchCleared([{ r: 0, c: 0, type: 1, special: null }], 1);  // melt one of the two
+    c.onIdleReached();                                              // idle -> snapshotSaveState
+    const ss = storage.load().classic.saveState;
+    expect(ss.ice).toEqual([[7, 7]]);
+    classic.exit();
+    classic.enter({ restoreFrom: ss });                             // full roundtrip
+    const spy = vi.spyOn(render, 'drawText');
+    classic.draw();
+    expect(iceLabel(spy, 1)).toBeTruthy();
+  });
+
+  it('undo restores melted ice along with the board', () => {
+    const setUndo = vi.spyOn(overlay, 'setUndoHandler');
+    classic.enter({ restoreFrom: { grid: plantedSerial(), level: 5, movesLeft: 12, score: 0, milestoneFloor: 0, ice: [[0, 0], [7, 7]] } });
+    const undoFn = setUndo.mock.calls[0][0];
+    const c = debugHud.activeCascade();
+    c.onMoveCommitted();                             // shifts the enter-idle capture into prevIdle
+    c.onMatchCleared([{ r: 0, c: 0, type: 1, special: null }], 1);
+    c.onIdleReached();
+    const spy = vi.spyOn(render, 'drawText');
+    classic.draw();
+    expect(iceLabel(spy, 1)).toBeTruthy();
+    expect(undoFn()).toBe(true);                     // scene-side rewind (charge lives in the overlay)
+    spy.mockClear();
+    classic.draw();
+    expect(iceLabel(spy, 2)).toBeTruthy();           // frost layer back
+    expect(movesLabel(spy)).toBe(i18n.t('classic.moves', { n: 12 })); // move refunded
+  });
+});
+
+describe('boss levels (level 10)', () => {
+  it('fresh enter seeds ticking time bombs at (2,2)/(5,5) and tags the HUD', () => {
+    classic.enter({ level: 10 });
+    const c = debugHud.activeCascade();
+    for (const [r, col] of [[2, 2], [5, 5]]) {
+      expect(c.grid[r][col].special).toBe(SPECIAL.TIME_BOMB);
+      expect(c.grid[r][col].bombCountdown).toBe(9);
+    }
+    const spy = vi.spyOn(render, 'drawText');
+    classic.draw();
+    const label = spy.mock.calls.find(call => typeof call[0] === 'string' && call[0].includes(i18n.t('classic.boss')));
+    expect(label).toBeTruthy();
+    expect(label[0]).toBe(`${i18n.t('classic.level', { n: 10 })} ${i18n.t('classic.boss')}`);
+  });
+
+  it('a restored boss run keeps its serialized board — no re-seeding', () => {
+    classic.enter({ level: 10 });
+    const ser = serializeGrid(debugHud.activeCascade().grid);
+    ser[2][2].special = null; ser[2][2].bombCountdown = null;   // defused before the park
+    classic.exit();
+    classic.enter({ restoreFrom: { grid: ser, level: 10, movesLeft: 20, score: 0 } });
+    const c = debugHud.activeCascade();
+    expect(c.grid[2][2].special).toBeNull();                    // restore did NOT re-plant it
+    expect(c.grid[5][5].special).toBe(SPECIAL.TIME_BOMB);       // carried inside the snapshot
+    expect(c.grid[5][5].bombCountdown).toBe(9);
+  });
+
+  it('boss seeding never stomps a cell that already carries a special', () => {
+    const realCreate = gridM.createBoard;
+    vi.spyOn(gridM, 'createBoard').mockImplementation((...a) => {
+      const g = realCreate(...a);
+      g[2][2].special = SPECIAL.COLOR_BOMB;        // pre-existing special at a bomb anchor
+      return g;
+    });
+    classic.enter({ level: 10 });
+    const c = debugHud.activeCascade();
+    expect(c.grid[2][2].special).toBe(SPECIAL.COLOR_BOMB);      // left alone
+    expect(c.grid[2][2].bombCountdown).toBeNull();
+    expect(c.grid[5][5].special).toBe(SPECIAL.TIME_BOMB);       // the free anchor still seeded
+  });
+});
+
+describe('bomb defusal + hint button', () => {
+  it('onBombsDefused feeds the achievement counter', () => {
+    classic.enter({ level: 1 });
+    debugHud.activeCascade().onBombsDefused(2);
+    expect(storage.load().achievements.counters.bombsDefused).toBe(2);
+  });
+
+  it('clicking the hint button feeds a hint into the next draw', () => {
+    classic.enter({ restoreFrom: { grid: plantedSerial(), level: 1, movesLeft: 30, score: 0 } });
+    const btn = vi.spyOn(render, 'drawHitButton');
+    classic.draw();
+    const hintBtn = btn.mock.calls.find(call => call[4] === '💡');
+    hintBtn[5]();                                  // ready + idle -> findModestHint
+    const board = vi.spyOn(render, 'drawBoard');
+    classic.draw();
+    expect(board.mock.calls[0][1].hint).toBeTruthy();
+  });
+});
+
+describe('undo power-up', () => {
+  it('rewinds grid/score/moves to the pre-move idle and spends the charge; a second undo is refused', () => {
+    seedRandom();   // a runaway cascade could win the level and void the undo
+    storage.saveKey('powerups', { charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 2 } });
+    classic.enter({ restoreFrom: { grid: plantedSerial(), level: 1, movesLeft: 30, score: 0 } });
+    const c = debugHud.activeCascade();
+    const before = JSON.stringify(serializeGrid(c.grid));
+    classic.draw();
+    dragSwap(classic, { r: 0, c: 2 }, { r: 1, c: 2 });          // committed move
+    runToIdle(classic, c);
+    expect(c.score).toBeGreaterThanOrEqual(30);
+    expect(JSON.stringify(serializeGrid(c.grid))).not.toBe(before);
+    const slotSpy = vi.spyOn(render, 'drawPowerupSlot');
+    classic.draw();
+    const u = slotSpy.mock.calls[4];                            // 5th panel slot = undo
+    const at = { x: u[0] + u[2] / 2, y: u[1] + u[3] / 2 };
+    classic.onPointer({ type: 'down', x: at.x, y: at.y });      // undo slot tap
+    expect(c.score).toBe(0);
+    expect(c.scoreShown).toBe(0);
+    expect(JSON.stringify(serializeGrid(c.grid))).toBe(before); // board rewound
+    expect(storage.load().powerups.charges.undo).toBe(1);       // one charge spent
+    const textSpy = vi.spyOn(render, 'drawText');
+    classic.draw();
+    expect(movesLabel(textSpy)).toBe(i18n.t('classic.moves', { n: 30 })); // move refunded
+    expect(storage.load().classic.saveState.movesLeft).toBe(30);          // rewound board snapshotted
+    classic.onPointer({ type: 'down', x: at.x, y: at.y });      // second undo, no new move since
+    expect(storage.load().powerups.charges.undo).toBe(1);       // refused: charge intact
+    expect(c.score).toBe(0);
+  });
+
+  it('undo is refused mid-animation and after the result fired', () => {
+    const setUndo = vi.spyOn(overlay, 'setUndoHandler');
+    classic.enter({ restoreFrom: { grid: plantedSerial(), level: 1, movesLeft: 5, score: 0 } });
+    const undoFn = setUndo.mock.calls[0][0];
+    const c = debugHud.activeCascade();
+    c.onMoveCommitted();                             // prevIdle now exists
+    c.state = STATE.FALLING;
+    expect(undoFn()).toBe(false);                    // not idle -> refused
+    c.state = STATE.IDLE;
+    c.score = 500;
+    c.onIdleReached();                               // win -> resultTriggered
+    expect(undoFn()).toBe(false);                    // after a result -> refused
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { installCanvas, setViewport } from './helpers.js';
 
 // title.js imports ../main.js (setScene, clockMs). Mock it (hoisted) so importing
@@ -10,6 +10,7 @@ import * as render from '../src/render.js';
 import * as storage from '../src/storage.js';
 import * as i18n from '../src/i18n.js';
 import * as dialogs from '../src/dialogs.js';
+import * as sound from '../src/sound.js';
 import { setScene } from '../src/main.js';
 import { todayISO } from '../src/rng.js';
 import { NAME_MAX_LEN } from '../src/config.js';
@@ -276,7 +277,66 @@ describe('draw — content branches', () => {
     title.draw();
     const ctx = render.ctxRef();
     const done = i18n.t('title.dailySubtitleDone', { date: i18n.formatDate(todayISO()) });
-    expect(ctx.__calls.some((c) => c[0] === 'fillText' && c[1][0] === done)).toBe(true);
+    expect(ctx.__calls.some((c) => c[0] === 'fillText' && String(c[1][0]).startsWith(done))).toBe(true);
+  });
+
+  it('Daily subtitle counts down to the next board once submitted', () => {
+    const st = seedName('Ada');
+    st.daily.todaySubmittedDate = todayISO();
+    title.enter();
+    title.draw();
+    const ctx = render.ctxRef();
+    const line = ctx.__calls.find((c) => c[0] === 'fillText' && String(c[1][0]).includes('✓'));
+    expect(line).toBeTruthy();
+    // countdownParts(msUntilNextDaily()) → "… ✓  ·  Next in {h}h {m}m".
+    expect(line[1][0]).toMatch(/Next in \d+h \d+m$/);
+  });
+
+  it('Daily subtitle appends the streak when yesterday extended an unbroken run', () => {
+    const st = seedName('Ada');
+    const day = (back) => { const d = new Date(); d.setDate(d.getDate() - back); return todayISO(d); };
+    st.daily.history = { [day(1)]: { score: 100 }, [day(2)]: { score: 90 } };
+    title.enter();
+    title.draw();
+    const ctx = render.ctxRef();
+    const expected = `${i18n.t('title.dailySubtitle', { date: i18n.formatDate(todayISO()) })}  ·  ${i18n.t('daily.streak', { n: 2 })}`;
+    expect(ctx.__calls.some((c) => c[0] === 'fillText' && c[1][0] === expected)).toBe(true);
+  });
+
+  it('Continue prefers the most recently saved snapshot and ignores lastPlayedMode', () => {
+    const st = seedName('Ada');
+    st.profile.lastPlayedMode = 'blitz';               // must be irrelevant
+    st.zen.saveState = { score: 100, savedAt: '2026-06-01T10:00:00.000Z' };
+    st.classic.saveState = { level: 7, score: 50, savedAt: '2026-06-20T10:00:00.000Z' };
+    title.enter();
+    title.draw();
+    // Classic snapshot is newer → only Continue Classic is offered.
+    expect(renderSpy.mock.calls.some((c) => c[4] === i18n.t('title.continueZen'))).toBe(false);
+    down(rectByLabel(i18n.t('title.continueClassic')));
+    expect(setScene).toHaveBeenCalledWith('gameClassic', { restoreFrom: st.classic.saveState });
+  });
+
+  it('Continue: an unstamped saveState loses to any stamped one (savedAt || "")', () => {
+    const st = seedName('Ada');
+    st.profile.lastPlayedMode = 'blitz';
+    st.zen.saveState = { score: 9, savedAt: '2026-06-21T00:00:00.000Z' };
+    st.classic.saveState = { level: 2, score: 1 };     // no savedAt → sorts oldest
+    title.enter();
+    title.draw();
+    expect(renderSpy.mock.calls.some((c) => c[4] === i18n.t('title.continueClassic'))).toBe(false);
+    down(rectByLabel(i18n.t('title.continueZen')));
+    expect(setScene).toHaveBeenCalledWith('gameZen', { restoreFrom: st.zen.saveState });
+  });
+
+  it('Continue: a stamped snapshot beats an earlier unstamped leader in the scan', () => {
+    const st = seedName('Ada');
+    st.zen.saveState = { score: 3 };                   // scanned first, unstamped
+    st.classic.saveState = { level: 4, score: 8, savedAt: '2026-06-22T09:00:00.000Z' };
+    title.enter();
+    title.draw();
+    expect(renderSpy.mock.calls.some((c) => c[4] === i18n.t('title.continueZen'))).toBe(false);
+    down(rectByLabel(i18n.t('title.continueClassic')));
+    expect(setScene).toHaveBeenCalledWith('gameClassic', { restoreFrom: st.classic.saveState });
   });
 
   it('Blitz subtitle reflects a best score when one exists', () => {
@@ -303,6 +363,7 @@ describe('draw — content branches', () => {
     const st = seedName('Ada');
     delete st.blitz;
     delete st.puzzle;
+    delete st.daily.history;   // daily streak read falls back via `|| {}`
     title.enter();
     expect(() => title.draw()).not.toThrow();
     const ctx = render.ctxRef();
@@ -478,8 +539,10 @@ describe('settings overlay', () => {
   it('toggles open from the Settings button and closed from Close', () => {
     seedName('Ada');
     const rects = openSettings();
-    expect(rects).toHaveLength(7);
-    down(rects[6]);                       // Close
+    // 0 haptic · 1 sound · 2 painting · 3-5 language pills · 6-7 gem-style
+    // pills · 8 gempedia · 9 gallery · 10 export · 11 import · 12 reset · 13 close
+    expect(rects).toHaveLength(14);
+    down(rects[13]);                      // Close
     renderSpy.mockClear();
     title.draw();
     expect(settingsRects()).toHaveLength(0);
@@ -506,7 +569,7 @@ describe('settings overlay', () => {
     seedName('Ada');
     const before = storage.getSettings().paintingMode; // default false
     const rects = openSettings();
-    down(rects[1]);                                    // painting-mode toggle
+    down(rects[2]);                                    // painting-mode toggle
     expect(storage.getSettings().paintingMode).toBe(!before);
   });
 
@@ -514,7 +577,7 @@ describe('settings overlay', () => {
     seedName('Ada');
     const setLang = vi.spyOn(i18n, 'setLanguage');
     const rects = openSettings();
-    down(rects[4]);                                    // Español pill
+    down(rects[5]);                                    // Español pill
     expect(setLang).toHaveBeenCalledWith('es');
     expect(i18n.getLanguageSetting()).toBe('es');
     expect(storage.getSettings().language).toBe('es');
@@ -524,7 +587,7 @@ describe('settings overlay', () => {
     seedName('Bob');
     vi.spyOn(dialogs, 'confirm').mockResolvedValue(true);
     const rects = openSettings();
-    down(rects[5]);                                    // Reset (async onClick)
+    down(rects[12]);                                   // Reset (async onClick)
     await flushMicro();
     expect(storage.getProfile().playerName).toBe('');  // progress wiped
     expect(document.getElementById('name-input')).toBeTruthy(); // name entry reopened
@@ -534,9 +597,208 @@ describe('settings overlay', () => {
     seedName('Bob');
     vi.spyOn(dialogs, 'confirm').mockResolvedValue(false);
     const rects = openSettings();
-    down(rects[5]);                                    // Reset
+    down(rects[12]);                                   // Reset
     await flushMicro();
     expect(storage.getProfile().playerName).toBe('Bob');
     expect(document.getElementById('name-input')).toBeNull();
+  });
+
+  it('sound toggle flips + persists the setting and re-arms the synth both ways', () => {
+    seedName('Ada');
+    const setEnabled = vi.spyOn(sound, 'setEnabled');
+    const rects = openSettings();
+    down(rects[1]);                                    // sound toggle: on → off
+    expect(storage.getSettings().sound).toBe(false);
+    expect(setEnabled).toHaveBeenCalledWith(false);
+    renderSpy.mockClear();
+    title.draw();                                      // overlay stays open; re-read settings
+    down(settingsRects()[1]);                          // off → on
+    expect(storage.getSettings().sound).toBe(true);
+    expect(setEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it('gem-style pills persist gemStyle and rebuild the atlas via render.setGemStyle', () => {
+    seedName('Ada');
+    // No-op impl so this test doesn't actually swap the shared module atlas.
+    const setStyle = vi.spyOn(render, 'setGemStyle').mockImplementation(() => {});
+    const rects = openSettings();
+    down(rects[7]);                                    // Shapes pill
+    expect(storage.getSettings().gemStyle).toBe('shapes');
+    expect(setStyle).toHaveBeenCalledWith('shapes');
+    renderSpy.mockClear();
+    title.draw();                                      // Shapes now the active pill
+    down(settingsRects()[6]);                          // Colors pill
+    expect(storage.getSettings().gemStyle).toBe('color');
+    expect(setStyle).toHaveBeenLastCalledWith('color');
+  });
+
+  it('Gempedia and Gallery buttons close the overlay and route to their scenes', () => {
+    seedName('Ada');
+    let rects = openSettings();
+    down(rects[8]);                                    // Gempedia
+    expect(setScene).toHaveBeenCalledWith('gempedia');
+    renderSpy.mockClear();
+    title.draw();
+    expect(settingsRects()).toHaveLength(0);           // overlay closed on route
+    rects = openSettings();                            // reopen for the second button
+    down(rects[9]);                                    // Gallery
+    expect(setScene).toHaveBeenLastCalledWith('gallery');
+  });
+});
+
+// --- settings overlay: save export / import ---------------------------------
+
+describe('settings overlay — save transfer', () => {
+  function setClipboard(value) {
+    Object.defineProperty(navigator, 'clipboard', { value, configurable: true, writable: true });
+  }
+
+  afterEach(() => {
+    try { Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }); } catch { /* ignore */ }
+  });
+
+  it('Export copies the save code to the clipboard and confirms', async () => {
+    seedName('Ada');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    setClipboard({ writeText });
+    const alert = vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
+    const rects = openSettings();
+    down(rects[10]);                                   // Export (async onClick)
+    await flushMicro();
+    expect(writeText).toHaveBeenCalledWith(storage.exportString());
+    expect(alert).toHaveBeenCalledWith(i18n.t('settings.exportCopied'));
+    expect(document.getElementById('import-input-wrap')).toBeNull();  // no manual modal
+  });
+
+  it('Export falls back to the manual copy modal when the clipboard write is denied', async () => {
+    seedName('Ada');
+    setClipboard({ writeText: vi.fn().mockRejectedValue(new Error('denied')) });
+    const alert = vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
+    const rects = openSettings();
+    down(rects[10]);
+    await flushMicro();
+    const wrap = document.getElementById('import-input-wrap');
+    expect(wrap).toBeTruthy();
+    const input = document.getElementById('import-input');
+    expect(input.readOnly).toBe(true);                 // copy-only field
+    expect(input.value).toBe(storage.exportString());
+    expect(wrap.querySelector('label').textContent).toBe(i18n.t('settings.exportManual'));
+    expect(wrap.querySelectorAll('button')).toHaveLength(1);  // just Close, no Cancel
+    expect(alert).not.toHaveBeenCalled();
+    wrap.querySelector('button').click();              // Close (prefill branch)
+    await flushMicro();
+    expect(document.getElementById('import-input-wrap')).toBeNull();
+  });
+
+  it('Export goes straight to the manual modal when no clipboard API exists', async () => {
+    seedName('Ada');
+    setClipboard(undefined);                           // navigator.clipboard?.writeText → false
+    const rects = openSettings();
+    down(rects[10]);
+    await flushMicro();
+    expect(document.getElementById('import-input')?.readOnly).toBe(true);
+  });
+
+  it('Import applies a code produced by exportString and confirms', async () => {
+    const st = seedName('Ada');
+    st.zen.bestScore = 777;
+    const code = storage.exportString();               // portable snapshot of Ada's save
+    storage.reset();
+    i18n.init();
+    seedName('Bob');                                   // a different device/profile
+    const alert = vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
+    const rects = openSettings();
+    down(rects[11]);                                   // Import
+    const wrap = document.getElementById('import-input-wrap');
+    expect(wrap).toBeTruthy();
+    const input = document.getElementById('import-input');
+    expect(input.readOnly).toBe(false);                // paste-able
+    expect(wrap.querySelector('label').textContent).toBe(i18n.t('settings.importLabel'));
+    title.onPointer({ type: 'down', x: 400, y: 300 }); // canvas taps blocked by the modal
+    expect(setScene).not.toHaveBeenCalled();
+    input.value = code;
+    const [ok, cancel] = wrap.querySelectorAll('button');
+    expect(ok.textContent).toBe(i18n.t('settings.importApply'));
+    expect(cancel.textContent).toBe(i18n.t('common.cancel'));
+    ok.click();
+    await flushMicro();
+    expect(alert).toHaveBeenCalledWith(i18n.t('settings.importDone'));
+    expect(storage.getProfile().playerName).toBe('Ada');       // blob applied
+    expect(storage.load().zen.bestScore).toBe(777);
+    expect(document.getElementById('import-input-wrap')).toBeNull();
+    expect(document.getElementById('name-input-wrap')).toBeNull(); // name present → no re-entry
+  });
+
+  it('Import rejects an invalid code with the importBad alert and keeps local state', async () => {
+    seedName('Ada');
+    const alert = vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
+    const rects = openSettings();
+    down(rects[11]);
+    document.getElementById('import-input').value = 'not-a-save-code';
+    document.querySelector('#import-input-wrap button').click();   // Import
+    await flushMicro();
+    expect(alert).toHaveBeenCalledWith(i18n.t('settings.importBad'));
+    expect(storage.getProfile().playerName).toBe('Ada');           // untouched
+    expect(document.getElementById('import-input-wrap')).toBeNull();
+  });
+
+  it('Import of a code with no player name reopens the name entry', async () => {
+    storage.reset();
+    const code = storage.exportString();               // default state: empty name
+    seedName('Bob');
+    vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
+    const rects = openSettings();
+    down(rects[11]);
+    document.getElementById('import-input').value = code;
+    document.querySelector('#import-input-wrap button').click();
+    await flushMicro();
+    expect(document.getElementById('name-input-wrap')).toBeTruthy();
+  });
+
+  it('Cancel dismisses the import modal without importing', () => {
+    seedName('Ada');
+    const rects = openSettings();
+    down(rects[11]);
+    const [, cancel] = document.querySelectorAll('#import-input-wrap button');
+    cancel.click();
+    expect(document.getElementById('import-input-wrap')).toBeNull();
+    expect(storage.getProfile().playerName).toBe('Ada');
+  });
+
+  it('a double-fired export cannot stack a second modal (idempotence guard)', () => {
+    seedName('Ada');
+    setClipboard(undefined);
+    openSettings();
+    // Fire the export onClick directly: once the modal is up, canvas taps are
+    // blocked, so only a double-fire (e.g. rapid double-tap racing the async
+    // handler) can call showImportEntry again.
+    const exportClick = rectByLabel(i18n.t('settings.exportSave')).onClick;
+    exportClick();
+    exportClick();
+    expect(document.querySelectorAll('#import-input-wrap')).toHaveLength(1);
+  });
+
+  it('focuses the modal input ~50ms after opening, selecting the code for exports', () => {
+    vi.useFakeTimers();
+    try {
+      seedName('Ada');
+      setClipboard(undefined);
+      const rects = openSettings();
+      down(rects[11]);                                       // import → no prefill
+      let input = document.getElementById('import-input');
+      const focusSpy = vi.spyOn(input, 'focus');
+      const selectSpy = vi.spyOn(input, 'select');
+      vi.advanceTimersByTime(50);
+      expect(focusSpy).toHaveBeenCalled();
+      expect(selectSpy).not.toHaveBeenCalled();              // nothing to select
+      document.querySelectorAll('#import-input-wrap button')[1].click();  // Cancel
+      rectByLabel(i18n.t('settings.exportSave')).onClick();  // export → prefilled
+      input = document.getElementById('import-input');
+      const selectPrefill = vi.spyOn(input, 'select');
+      vi.advanceTimersByTime(50);
+      expect(selectPrefill).toHaveBeenCalled();              // code pre-selected
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

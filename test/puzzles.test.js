@@ -3,14 +3,28 @@ import { SPECIAL } from '../src/config.js';
 import {
   PUZZLES, getPuzzle, isGoalMet, goalText, progressText,
 } from '../src/puzzles.js';
+import { newCell, hasAnyValidMove } from '../src/grid.js';
+import { findMatches } from '../src/matcher.js';
 
 // i18n is never init()'d here, so formatNumber falls back to String(n) and the
 // active locale stays 'en' — making the rendered strings deterministic.
 
 describe('PUZZLES table + getPuzzle', () => {
-  it('has 12 puzzles with unique, sequential ids', () => {
-    expect(PUZZLES).toHaveLength(12);
-    expect(PUZZLES.map(p => p.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  it('has 15 puzzles with unique, sequential ids', () => {
+    expect(PUZZLES).toHaveLength(15);
+    expect(PUZZLES.map(p => p.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  });
+
+  it('hand-laid boards (13+) are 8x8 digit rows with no pre-match and a valid move', () => {
+    const authored = PUZZLES.filter(p => p.board);
+    expect(authored.map(p => p.id)).toEqual([13, 14, 15]);
+    for (const p of authored) {
+      expect(p.board).toHaveLength(8);
+      for (const row of p.board) expect(row).toMatch(/^[0-6]{8}$/);
+      const g = p.board.map(row => [...row].map(ch => newCell(Number(ch))));
+      expect(findMatches(g).cleared.size).toBe(0);   // stable at entry
+      expect(hasAnyValidMove(g)).toBe(true);          // playable at entry
+    }
   });
 
   it('getPuzzle finds a puzzle by id', () => {

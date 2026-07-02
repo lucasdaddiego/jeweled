@@ -20,15 +20,17 @@ renderer — no framework, no runtime dependencies.
 
 | Mode | What it is |
 | --- | --- |
-| **Classic** | Level-based progression — hit the score target before you run out of moves. |
-| **Blitz** | 60-second score attack. Cascade fast, chain specials, beat your best. |
-| **Zen** | Endless, no fail state. A relaxed board you can put down and resume — the run auto-saves. |
-| **Daily** | One deterministic board per day (seeded from the date), 30 moves, max score. Everyone gets the same puzzle. |
-| **Puzzles** | Hand-crafted puzzle boards with set solutions. |
+| **Classic** | 300 levels — hit the score target before you run out of moves. Ice levels demand melting every frost cell; every 10th level is a **boss** that starts with ticking time bombs. |
+| **Blitz** | 60-second score attack with ⏱ **+time gems** and a speed-streak bonus for chaining fast moves. |
+| **Zen** | Endless, no fail state. Park it any time (Back or close the tab) and resume from the title. Painting mode keeps a gallery of your finished canvases. |
+| **Daily** | One deterministic board per day (seeded from the date), 30 moves, max score. Streaks, a calendar history, share cards, and an optional online leaderboard. |
+| **Puzzles** | Goal challenges; the newest ones are hand-laid boards with designed solutions. |
 
 Plus special gems (line clears, color bombs, fire, lightning, star, wildcard…),
-spendable power-ups, an achievements system, a streak/play-history heatmap, and
-full English/Spanish localization.
+spendable power-ups (including **Undo**), procedural **sound** (WebAudio, no
+assets), an in-game **Gempedia** reference, achievements, a play-history
+heatmap, a colorblind-friendly **Shapes** gem style, save export/import codes,
+and full English/Spanish localization.
 
 ## Tech stack
 
@@ -38,7 +40,8 @@ full English/Spanish localization.
 - **Persistence**: `localStorage` behind a small versioned-schema wrapper with forward migrations (`src/storage.js`).
 - **i18n**: `en` / `es` with auto-detection (`src/i18n.js`).
 - **Hosting**: Cloudflare Pages, auto-deployed from `master` via GitHub Actions.
-- **Tested**: [Vitest](https://vitest.dev) + jsdom with a stubbed Canvas 2D context; ~99% coverage enforced as a CI gate (`src/main.js`, `src/render.js`, every scene and the cascade engine all covered).
+- **Tested**: [Vitest](https://vitest.dev) + jsdom with a stubbed Canvas 2D context; ~99% coverage enforced as a CI gate — plus a real-browser Playwright smoke test (`test-e2e/`) that boots the app headless and plays a Zen entry.
+- **Optional backend**: a daily leaderboard as a Cloudflare Pages Function + KV (`functions/api/leaderboard/`). The game hides the leaderboard UI until the endpoint answers, so the backend is entirely optional — see below.
 
 ## Run locally
 
@@ -136,7 +139,24 @@ vitest.config.js    Test runner + coverage-gate config
 | `npm run check` | `node --check` every `src/*.js`. |
 | `npm test` | Run the Vitest suite once. |
 | `npm run test:watch` | Vitest in watch mode. |
+| `npm run test:e2e` | Playwright smoke test (needs `npx playwright install chromium` once). |
 | `npm run coverage` | Suite + coverage report (the CI gate). |
+
+## Daily leaderboard (optional)
+
+The Daily result screen shows an online top-10 when the backend is deployed.
+To enable it:
+
+```bash
+npx wrangler kv namespace create LEADERBOARD
+# paste the printed id into the kv_namespaces stanza in wrangler.jsonc
+```
+
+`wrangler pages deploy dist` picks up `functions/` from the repo root
+automatically. Scores are client-submitted and trivially spoofable — it's a
+friendly hobby leaderboard, not an anti-cheat system (see the honest comment in
+`functions/api/leaderboard/[date].js`). Rate-limited to 3 submissions/day/IP;
+entries expire after 90 days.
 
 ## Contributing
 

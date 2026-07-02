@@ -1,7 +1,11 @@
 // Combo text floaters — pooled.
+// Also hosts the shared match/special FX dispatchers (handleMatchCleared /
+// handleSpecialActivated), which makes this the single wiring point for
+// match/special SFX across all five game scenes.
 
-import { FLOATER_POOL } from './config.js';
+import { FLOATER_POOL, SPECIAL } from './config.js';
 import * as i18n from './i18n.js';
+import * as sound from './sound.js';
 
 class Floater {
   constructor() {
@@ -76,8 +80,18 @@ export function handleMatchCleared(cells, depth, deps) {
   deps.waves.spawn(centerX, centerY, 'rgba(255,255,255,0.55)', radius, 450);
   if (depth >= 2) spawnForCascade(depth, centerX, centerY - 40);
   if (haptic && navigator.vibrate) navigator.vibrate(15);
+  sound.matchPop(depth);
   return { x: centerX, y: centerY };
 }
+
+// SPECIAL.* → specialWhoosh() kind. Passive specials (WILDCARD/COIN/GRAVITY/
+// TIME_BOMB) never reach handleSpecialActivated, so they need no mapping.
+const WHOOSH_KIND = {
+  [SPECIAL.LINE_H]: 'line', [SPECIAL.LINE_V]: 'line',
+  [SPECIAL.AREA_BOMB]: 'area', [SPECIAL.COLOR_BOMB]: 'color',
+  [SPECIAL.FIRE]: 'fire', [SPECIAL.LIGHTNING]: 'lightning',
+  [SPECIAL.STAR]: 'star',
+};
 
 // Special-gem activation effects. Dispatches the right visual per special type:
 //   COLOR_BOMB → big white shockwave
@@ -140,6 +154,24 @@ export function handleSpecialActivated(act, deps) {
   // handleMatchCleared fires for normal matches, so the player can feel the
   // "this was a special!" cue without needing to look at the board.
   if (haptic && navigator.vibrate) navigator.vibrate([0, 30, 20, 30]);
+  sound.specialWhoosh(WHOOSH_KIND[act.special] || 'line');
+}
+
+// Generic one-off text floater (rises + fades like a combo label). Used for
+// mode-specific callouts: Blitz "+2s" time bonuses, speed-streak labels, etc.
+export function spawnText(x, y, text, color = '#ffffff', fontSize = 20) {
+  const f = findDead();
+  if (!f) return;
+  if (!f.alive) aliveCount++;
+  f.x0 = f.x = x;
+  f.y0 = f.y = y;
+  f.targetX = null; f.targetY = null;
+  f.text = text;
+  f.life = f.maxLife = 750;
+  f.fontSize = fontSize;
+  f.color = color;
+  f.kind = 'combo';
+  f.alive = true;
 }
 
 // Spawn a "+30" style score floater. If targetX/Y are provided, the floater

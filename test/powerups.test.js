@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import * as storage from '../src/storage.js';
 import * as powerups from '../src/powerups.js';
+import * as achievements from '../src/achievements.js';
 import { makeEmptyGrid, newCell, createBoard, hasAnyValidMove } from '../src/grid.js';
 import { findMatches } from '../src/matcher.js';
 import { mulberry32 } from '../src/rng.js';
@@ -27,7 +28,7 @@ function idSet(g) {
 
 describe('charge management', () => {
   it('getCharges returns the default all-zero slots', () => {
-    expect(powerups.getCharges()).toEqual({ shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0 });
+    expect(powerups.getCharges()).toEqual({ shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 0 });
   });
 
   it('canSpend is false on an empty slot and true once it has a charge', () => {
@@ -98,6 +99,23 @@ describe('charge management', () => {
     storage.flush(); // force the debounced write through synchronously
     const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY));
     expect(persisted.powerups.charges.recolor).toBe(1);
+  });
+});
+
+describe('spendCharge → achievements', () => {
+  // powerups.js and this file statically import the same achievements module
+  // instance, so summary() reads the counter spendCharge just bumped. The
+  // storage.reset() in beforeEach wipes persisted counters between tests, so
+  // each starts with achievements state rebuilt from defaults (no powerupsUsed).
+  it('a successful spend bumps the powerupsUsed counter', () => {
+    powerups.addCharge('shuffle');
+    expect(powerups.spendCharge('shuffle')).toBe(true);
+    expect(achievements.summary().counters.powerupsUsed).toBe(1);
+  });
+
+  it('a failed spend (empty slot) does not notify achievements', () => {
+    expect(powerups.spendCharge('shuffle')).toBe(false);
+    expect(achievements.summary().counters.powerupsUsed).toBeUndefined();
   });
 });
 

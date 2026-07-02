@@ -209,3 +209,62 @@ describe('toBlob', () => {
     expect(blob).toBeInstanceOf(Blob);
   });
 });
+
+describe('thumbnailDataURL', () => {
+  it('returns null before init (canvas null guard)', async () => {
+    const painting = await fresh();
+    await expect(painting.thumbnailDataURL()).resolves.toBeNull();
+  });
+
+  it('bakes the painting onto a dark 256px thumb and returns a data URL', async () => {
+    const made = installOffscreen();
+    const painting = await fresh();
+    painting.init(1080, 1080);
+    const url = await painting.thumbnailDataURL();   // default size = 256
+    // jsdom's FileReader encodes the stub Blob from convertToBlob().
+    expect(typeof url).toBe('string');
+    expect(url).toMatch(/^data:/);
+    // made[0] = the painting layer, made[1] = the thumb constructed inside.
+    expect(made).toHaveLength(2);
+    expect(made[1].width).toBe(256);
+    expect(made[1].height).toBe(256);
+    const calls = made[1]._ctx.__calls;
+    expect(calls).toContainEqual(['fillRect', [0, 0, 256, 256]]);      // dark backing
+    expect(calls).toContainEqual(['drawImage', [made[0], 0, 0, 256, 256]]); // painting on top
+  });
+
+  it('honors an explicit thumbnail size', async () => {
+    const made = installOffscreen();
+    const painting = await fresh();
+    painting.init(1080, 1080);
+    await painting.thumbnailDataURL(128);
+    expect(made[1].width).toBe(128);
+  });
+
+  it('returns null when convertToBlob rejects (catch branch)', async () => {
+    const made = installOffscreen();
+    const painting = await fresh();
+    painting.init(1080, 1080);
+    // Swap the global so only the thumb constructed inside thumbnailDataURL
+    // fails to encode; the painting layer itself stays valid.
+    class Failing {
+      constructor(w, h) { this.width = w; this.height = h; }
+      getContext() { return makeStubCtx(this); }
+      convertToBlob() { return Promise.reject(new Error('encode failed')); }
+    }
+    vi.stubGlobal('OffscreenCanvas', Failing);
+    await expect(painting.thumbnailDataURL()).resolves.toBeNull();
+    expect(made).toHaveLength(1);   // no recording thumb was built
+  });
+
+  it('resolves null when the FileReader errors instead of loading', async () => {
+    installOffscreen();
+    const painting = await fresh();
+    painting.init(1080, 1080);
+    class ErroringFileReader {
+      readAsDataURL() { setTimeout(() => this.onerror(new Error('read failed')), 0); }
+    }
+    vi.stubGlobal('FileReader', ErroringFileReader);
+    await expect(painting.thumbnailDataURL()).resolves.toBeNull();
+  });
+});

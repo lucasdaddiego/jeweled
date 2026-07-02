@@ -1,4 +1,5 @@
-// Classic mode: 20 levels, score-target with N moves, stars on win, persists progress.
+// Classic mode: 300 levels (see src/levels.js), score-target with N moves,
+// stars on win, persists progress.
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
@@ -12,7 +13,7 @@ import * as achievements from '../achievements.js';
 import * as overlay from './powerupOverlay.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard, deserializeGrid, serializeGrid } from '../grid.js';
 import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
@@ -34,6 +35,68 @@ let target = 500;
 let movesLeft = 30;
 let resultTriggered = false;
 let milestoneFloor = 0;
+
+// Ice modifier: per-cell frost layer counts (null when the level has none).
+// A clear AT an iced cell melts one layer; the win needs score AND no ice.
+let iceMap = null;
+let iceLeft = 0;
+// Boss levels start seeded with ticking time bombs.
+let isBoss = false;
+
+function initIce(def, restored) {
+  isBoss = !!def.boss;
+  if (!def.ice) { iceMap = null; iceLeft = 0; return; }
+  iceMap = Array.from({ length: 8 }, () => new Array(8).fill(0));
+  iceLeft = 0;
+  const cells = restored || def.ice;
+  for (const [r, c] of cells) {
+    if (iceMap[r]?.[c] === 0) { iceMap[r][c] = 1; iceLeft++; }
+  }
+}
+
+function meltIceAt(r, c) {
+  if (iceMap && iceMap[r]?.[c] > 0) {
+    iceMap[r][c] = 0;
+    iceLeft--;
+  }
+}
+
+function remainingIceCells() {
+  if (!iceMap) return null;
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (iceMap[r][c] > 0) out.push([r, c]);
+  return out;
+}
+
+// Undo power-up (same scheme as gameZen, plus the move refund): curIdle holds
+// the latest idle board; a committed move shifts it into prevIdle.
+let prevIdle = null;
+let curIdle = null;
+
+function captureIdle() {
+  return {
+    grid: serializeGrid(grid), score: cascade.score, movesLeft, milestoneFloor,
+    ice: remainingIceCells(),
+  };
+}
+
+function applyUndo() {
+  if (!prevIdle || !cascade || cascade.state !== STATE.IDLE || resultTriggered) return false;
+  const g2 = deserializeGrid(prevIdle.grid);
+  for (let r = 0; r < g2.length; r++) {
+    for (let c = 0; c < g2[r].length; c++) grid[r][c] = g2[r][c];
+  }
+  cascade.score = prevIdle.score;
+  cascade.scoreShown = prevIdle.score;
+  movesLeft = prevIdle.movesLeft;
+  milestoneFloor = prevIdle.milestoneFloor;
+  if (prevIdle.ice) initIce(getLevel(levelNum), prevIdle.ice);
+  overlay.setMilestoneFloor(milestoneFloor);
+  curIdle = prevIdle;
+  prevIdle = null;
+  snapshotSaveState();
+  return true;
+}
 
 export function enter(args = {}) {
   document.body.className = '';
@@ -61,6 +124,18 @@ export function enter(args = {}) {
   const def = getLevel(levelNum);
   moves = def.moves; target = def.targetScore;
   if (args.restoreFrom == null) movesLeft = moves;
+  initIce(def, args.restoreFrom?.ice || null);
+  // Boss levels start with ticking bombs already on the board (fresh runs
+  // only — restores carry theirs inside the serialized grid).
+  if (isBoss && args.restoreFrom == null) {
+    for (const [br, bc] of [[2, 2], [5, 5]]) {
+      const cell = grid[br][bc];
+      if (cell && !cell.special) {
+        cell.special = SPECIAL.TIME_BOMB;
+        cell.bombCountdown = 9;
+      }
+    }
+  }
 
   resultTriggered = false;
   hint = null;
@@ -69,6 +144,8 @@ export function enter(args = {}) {
   overlay.bind(grid, cascade);
   overlay.reset();
   overlay.setMilestoneFloor(milestoneFloor);
+  // Restore an earned-but-unallocated milestone charge from the snapshot.
+  overlay.setPendingMilestones(args.restoreFrom?.pendingMilestones || 0);
   debugHud.setActiveCascade(cascade);
   render.setPanelWidth(render.layout.isNarrow ? 76 : 72);
   if (entryAnim) cascade.playEntryAnimation();
@@ -79,6 +156,7 @@ export function enter(args = {}) {
       palettes: GEM_PARTICLE_PALETTES,
       haptic: storage.getSettings().haptic !== false,
     });
+    for (const cell of cells) meltIceAt(cell.r, cell.c);
     achievements.notifyMatchCleared(cells.length, depth);
   };
   cascade.onSpecialActivated = (act) => {
@@ -87,13 +165,26 @@ export function enter(args = {}) {
       palettes: GEM_PARTICLE_PALETTES, SPECIAL,
       haptic: storage.getSettings().haptic !== false,
     });
+    meltIceAt(act.r, act.c);
+    for (const t of act.targets || []) meltIceAt(t.r, t.c);
   };
-  cascade.onMoveCommitted = () => { movesLeft--; };
+  cascade.onMoveCommitted = () => {
+    prevIdle = curIdle;   // capture the pre-move board for the undo power-up
+    movesLeft--;
+  };
   cascade.onBombExploded = () => { movesLeft = Math.max(0, movesLeft - 5); };
+  // Every other mode wires this; without it the special_* achievements could
+  // never progress in the game's main mode.
+  cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
+  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
   cascade.onIdleReached = () => {
+    curIdle = captureIdle();
     snapshotSaveState();
     checkWinLose();
   };
+  prevIdle = null;
+  curIdle = captureIdle();
+  overlay.setUndoHandler(applyUndo);
   cascade.onScoreChanged = (newScore, delta) => {
     if (delta > 0 && lastClearCenter) {
       spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
@@ -131,6 +222,8 @@ function snapshotSaveState() {
       level: levelNum,
       movesLeft,
       milestoneFloor,
+      pendingMilestones: overlay.getPendingMilestones(),
+      ice: remainingIceCells(),
       savedAt: new Date().toISOString(),
     },
   });
@@ -138,7 +231,8 @@ function snapshotSaveState() {
 
 function checkWinLose() {
   if (resultTriggered) return;
-  if (cascade.score >= target) {
+  // Ice levels demand both: the score target AND a fully melted board.
+  if (cascade.score >= target && iceLeft === 0) {
     resultTriggered = true;
     finalizeWin();
   } else if (movesLeft <= 0) {
@@ -195,8 +289,11 @@ export function draw() {
   const scoreFont = `bold ${render.responsiveFont(18)}px -apple-system, system-ui, sans-serif`;
   const subFont   = `${render.responsiveFont(14)}px -apple-system, system-ui, sans-serif`;
 
-  // Row 1: Level | Score / Target | Back
-  render.drawText(i18n.t('classic.level', { n: levelNum }), boardX, hudY + 6, { font: titleFont, shadow: true });
+  // Row 1: Level (+ boss tag) | Score / Target | Back
+  const levelLabel = isBoss
+    ? `${i18n.t('classic.level', { n: levelNum })} ${i18n.t('classic.boss')}`
+    : i18n.t('classic.level', { n: levelNum });
+  render.drawText(levelLabel, boardX, hudY + 6, { font: titleFont, shadow: true });
   // Center the score/target across the play area (board + right-side panel)
   // so it stays visually between the Level label and Back button.
   render.drawText(
@@ -235,14 +332,25 @@ export function draw() {
     color: moveColor,
     shadow: true,
   });
+  // Remaining-ice counter sits just left of the moves label on ice levels.
+  if (iceMap) {
+    render.drawText(i18n.t('classic.ice', { n: iceLeft }), boardR - 90, barY - 2, {
+      font: subFont, align: 'right',
+      color: iceLeft > 0 ? '#8fd1ff' : '#5fd068',
+      shadow: true,
+    });
+  }
 
-  render.drawBoard(grid, { shakeAmp: cascade.shakeAmp, settings, hint, idleMs: cascade.idleSinceMs });
+  drawHintButton(contentR - btnW - 48, hudY + 2, cascade, grid, (h) => { hint = h; }, buttons, cursorX, cursorY);
+  render.drawBoard(grid, { shakeAmp: cascade.shakeAmp, settings, hint, idleMs: cascade.idleSinceMs, iceMap });
   overlay.draw(cursorX, cursorY, buttons);
 }
 
 export function onPointer(evt) {
-  hint = null;
+  // Clear the hint only on 'down' — the release ('up') of the tap that PRESSED
+  // the hint button would otherwise erase the hint it just granted.
   if (evt.type === 'down') {
+    hint = null;
     if (overlay.isModalOpen()) {
       if (handleOverlayModalButton(evt)) return;
       if (overlay.handlePointer(evt)) return;

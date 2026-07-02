@@ -1,12 +1,13 @@
 // Shared drag-to-swap handler for game scenes.
 //
-// While dragging the source gem along the dominant axis, the would-be swap
-// partner is mirrored in the opposite direction so the user gets a visible
-// preview of the swap. On release with a sufficient delta, the cascade picks
-// up where we left off without snapping; on too-small a delta, both gems snap
-// back to their grid positions.
+// The dragged gem follows the pointer along the dominant axis (the would-be
+// partner stays put so an invalid drop only needs to bounce ONE gem back).
+// On release past the commit threshold, the cascade picks up the swap from
+// the gem's current render position without snapping; below the threshold
+// the dragged gem elastically returns to its cell.
 
 import * as render from './render.js';
+import * as sound from './sound.js';
 import { STATE } from './cascade.js';
 import { GRID } from './config.js';
 
@@ -109,7 +110,8 @@ function up(x, y) {
     // Don't reset renderRow/Col — cascade peeks for a match and either commits
     // (continuing the swap animation from where we are) or bounces the dragged
     // gem back to source on its own.
-    cascade.tryStartSwap(active.source, target);
+    if (cascade.tryStartSwap(active.source, target)) sound.swapClick();
+    else sound.invalidBuzz();
   } else {
     // Below threshold or out of bounds: bounce the dragged gem back to grid.
     if (cascade && cascade.bounceBack) {

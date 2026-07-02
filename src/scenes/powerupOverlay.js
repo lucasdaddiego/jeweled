@@ -10,6 +10,7 @@
 
 import * as render from '../render.js';
 import * as powerups from '../powerups.js';
+import * as sound from '../sound.js';
 import * as i18n from '../i18n.js';
 import { POWERUP_SLOTS, POWERUP_META, TYPES } from '../config.js';
 import { STATE } from '../cascade.js';
@@ -22,19 +23,54 @@ let recolorPickerAt = null;      // {r, c} when recolor needs a color
 let milestonePopup = false;      // true when the picker is showing
 let pendingMilestones = 0;       // queue of unallocated charges
 let milestoneFloor = 0;          // run-local score floor for progress ring
+// Scene-provided undo callback: returns true when a rewind was applied (the
+// scene owns the pre-move snapshot; the overlay only owns the charge).
+let undoHandler = null;
 
 export function bind(g, c)    { grid = g; cascade = c; }
-export function unbind()      { grid = null; cascade = null; reset(); }
+export function unbind() {
+  // Bank unallocated milestone charges before the module state is wiped.
+  // The scene has already advanced milestoneFloor past the earn, so a charge
+  // still sitting in the popup when the level ends (or the player backs out)
+  // could never be re-derived — destroying it here was a real loss.
+  autoAllocatePending();
+  grid = null; cascade = null; reset();
+}
 export function reset() {
   pendingPowerup = null;
   recolorPickerAt = null;
   milestonePopup = false;
   pendingMilestones = 0;
   milestoneFloor = 0;
+  undoHandler = null;
+}
+
+export function setUndoHandler(fn) { undoHandler = fn; }
+
+// Assign each pending charge to the first non-full slot, in slot order.
+// Stops when every slot is at cap — the cap is a designed limit, so charges
+// beyond it are forfeited exactly as if the player had banked them manually.
+function autoAllocatePending() {
+  while (pendingMilestones > 0) {
+    let placed = false;
+    for (const slot of POWERUP_SLOTS) {
+      if (powerups.addCharge(slot)) { placed = true; break; }
+    }
+    if (!placed) break;
+    pendingMilestones--;
+  }
 }
 
 export function setMilestoneFloor(floor) {
   milestoneFloor = floor || 0;
+}
+
+// Run-snapshot plumbing: scenes persist the pending (unallocated) milestone
+// count so a tab-kill mid-popup doesn't eat the earned charge.
+export function getPendingMilestones() { return pendingMilestones; }
+export function setPendingMilestones(n) {
+  pendingMilestones = Math.max(0, n | 0);
+  if (pendingMilestones > 0 && powerups.hasAvailableSlot()) milestonePopup = true;
 }
 
 export function isModalOpen() {
@@ -45,6 +81,7 @@ export function notifyMilestoneEarned(count) {
   if (count <= 0) return;
   pendingMilestones += count;
   milestonePopup = true;
+  sound.milestoneDing();
 }
 
 // ----- Drawing -----
@@ -173,7 +210,7 @@ function drawMilestonePopup(cursorX, cursorY, buttons) {
   const ctx = render.ctxRef();
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(0, 0, w, h);
-  const pw = Math.min(380, w - 32), ph = 280;
+  const pw = Math.min(440, w - 32), ph = 280;
   const px = (w - pw) / 2, py = (h - ph) / 2;
   render.roundRect(ctx, px, py, pw, ph, 14);
   ctx.fillStyle = '#1a1530'; ctx.fill();
@@ -183,7 +220,7 @@ function drawMilestonePopup(cursorX, cursorY, buttons) {
   render.drawText(i18n.t('powerup.pickFill'), px + pw / 2, py + 56, {
     font: '14px sans-serif', align: 'center', color: 'rgba(255,255,255,0.7)',
   });
-  const slotW = (pw - 40) / 4;
+  const slotW = (pw - 40) / POWERUP_SLOTS.length;
   const slotH = 90;
   for (let i = 0; i < POWERUP_SLOTS.length; i++) {
     const slot = POWERUP_SLOTS[i];
@@ -242,10 +279,30 @@ function onPowerupSlotClicked(slot) {
     // the defense-in-depth lets us add power-ups to those modes later without
     // a silent determinism break.
     powerups.activateShuffle(grid, cascade.rng);
-    maybeShowSavedMilestone();
+    sound.powerupZap();
+    doPostInstantPowerup();
+    return;
+  }
+  if (slot === 'undo') {
+    // Scene applies the rewind (it owns the pre-move snapshot); only a
+    // successful rewind spends the charge.
+    if (undoHandler && undoHandler()) {
+      powerups.spendCharge(slot);
+      sound.powerupZap();
+      doPostInstantPowerup();
+    }
     return;
   }
   pendingPowerup = pendingPowerup === slot ? null : slot;
+}
+
+// Shared tail for instant (no-target) power-ups: persist the board change
+// (the spend hit storage immediately, but shuffle/undo start no cascade, so
+// without a snapshot a tab-kill would restore the old board with the charge
+// already gone), then re-offer any banked milestone.
+function doPostInstantPowerup() {
+  cascade.onIdleReached?.();
+  maybeShowSavedMilestone();
 }
 
 function onMilestonePicked(slot) {
@@ -259,6 +316,7 @@ function onRecolorColorPicked(type) {
   const res = powerups.activateRecolor(grid, recolorPickerAt.r, recolorPickerAt.c, type);
   if (res.ok) {
     powerups.spendCharge('recolor');
+    sound.powerupZap();
     cascade.resolveCurrentMatches?.(recolorPickerAt);
     maybeShowSavedMilestone();
   }
@@ -275,6 +333,7 @@ function handleTargetTap(cell) {
       const res = powerups.activateColorBlast(grid, targetType);
       if (res.ok) {
         powerups.spendCharge('colorBlast');
+        sound.powerupZap();
         cascade.applyExternalClears(res.clears);
         maybeShowSavedMilestone();
       }
@@ -285,6 +344,10 @@ function handleTargetTap(cell) {
       const res = powerups.activateBombDrop(grid, cell.r, cell.c);
       if (res.ok) {
         powerups.spendCharge('bombDrop');
+        sound.powerupZap();
+        // Same rationale as shuffle: no cascade follows a bomb drop, so
+        // persist the board change alongside the already-persisted spend.
+        cascade.onIdleReached?.();
         maybeShowSavedMilestone();
       }
       pendingPowerup = null;

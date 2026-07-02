@@ -31,9 +31,9 @@ beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe('ACHIEVEMENTS catalogue + summary', () => {
-  it('exposes 20 achievements with unique ids and full metadata', async () => {
+  it('exposes 24 achievements with unique ids and full metadata', async () => {
     const { ach } = await fresh();
-    expect(ach.ACHIEVEMENTS).toHaveLength(20);
+    expect(ach.ACHIEVEMENTS).toHaveLength(24);
     const ids = ach.ACHIEVEMENTS.map(a => a.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const a of ach.ACHIEVEMENTS) {
@@ -51,7 +51,7 @@ describe('ACHIEVEMENTS catalogue + summary', () => {
     const s = ach.summary();
     expect(s).toEqual({
       unlocked: 0,
-      total: 20,
+      total: 24,
       counters: { totalMatches: 0 },
       unlockedSet: {},
     });
@@ -79,6 +79,16 @@ describe('notifyMatchCleared', () => {
     ]));
     expect(ach.summary().counters.totalMatches).toBe(10000);
   });
+
+  it('tracks the deepest cascade seen in the biggestCascade counter', async () => {
+    const { ach } = await fresh();
+    ach.notifyMatchCleared(3, 2);
+    expect(ach.summary().counters.biggestCascade).toBe(2);   // first depth recorded (|| 0 fallback)
+    ach.notifyMatchCleared(3, 5);
+    expect(ach.summary().counters.biggestCascade).toBe(5);   // deeper run raises the max
+    ach.notifyMatchCleared(3, 4);
+    expect(ach.summary().counters.biggestCascade).toBe(5);   // shallower run doesn't regress it
+  });
 });
 
 describe('notifySpecialSpawned', () => {
@@ -94,6 +104,14 @@ describe('notifySpecialSpawned', () => {
     const { ach } = await fresh();
     ach.notifySpecialSpawned('WILDCARD');
     expect(unlockedIds(ach)).toEqual([]);
+  });
+
+  it('increments the specialsCreated counter on every spawn, tracked or not', async () => {
+    const { ach } = await fresh();
+    ach.notifySpecialSpawned('COLOR_BOMB');
+    ach.notifySpecialSpawned('WILDCARD');    // no achievement attached — still counted
+    ach.notifySpecialSpawned('AREA_BOMB');
+    expect(ach.summary().counters.specialsCreated).toBe(3);
   });
 });
 
@@ -154,6 +172,72 @@ describe('notifyZenScore', () => {
   });
 });
 
+describe('notifyDailyStreak', () => {
+  it('unlocks streak_3 alone at a 3-day streak', async () => {
+    const { ach } = await fresh();
+    ach.notifyDailyStreak(2);
+    expect(unlockedIds(ach)).toEqual([]);
+    ach.notifyDailyStreak(3);
+    expect(unlockedIds(ach)).toEqual(['streak_3']);
+  });
+
+  it('unlocks both streak tiers at 7 days', async () => {
+    const { ach } = await fresh();
+    ach.notifyDailyStreak(7);
+    expect(unlockedIds(ach).sort()).toEqual(['streak_3', 'streak_7']);
+  });
+});
+
+describe('notifyBombsDefused', () => {
+  it('accumulates across calls and unlocks defuse_10 once the total reaches 10', async () => {
+    const { ach } = await fresh();
+    ach.notifyBombsDefused(4);
+    expect(ach.summary().counters.bombsDefused).toBe(4);
+    expect(unlockedIds(ach)).toEqual([]);                    // 4 < 10 — not yet
+
+    ach.notifyBombsDefused(6);                               // 4 + 6 = 10 → tier reached
+    expect(ach.summary().counters.bombsDefused).toBe(10);
+    expect(unlockedIds(ach)).toEqual(['defuse_10']);
+  });
+
+  it('ignores zero / negative counts entirely', async () => {
+    const { ach } = await fresh();
+    ach.notifyBombsDefused(0);
+    ach.notifyBombsDefused(-5);
+    expect(ach.summary().counters.bombsDefused).toBeUndefined();  // counter never even created
+    expect(unlockedIds(ach)).toEqual([]);
+  });
+});
+
+describe('notifyPowerupUsed', () => {
+  it('counts uses and unlocks powerup_10 on the 10th', async () => {
+    const { ach } = await fresh();
+    for (let i = 0; i < 9; i++) ach.notifyPowerupUsed();
+    expect(ach.summary().counters.powerupsUsed).toBe(9);
+    expect(unlockedIds(ach)).toEqual([]);
+
+    ach.notifyPowerupUsed();
+    expect(ach.summary().counters.powerupsUsed).toBe(10);
+    expect(unlockedIds(ach)).toEqual(['powerup_10']);
+  });
+});
+
+describe('addPlayTimeMs', () => {
+  it('accumulates in memory and flushes to the stored counter only at 15s', async () => {
+    const { ach } = await fresh();
+    ach.addPlayTimeMs(5000);
+    ach.addPlayTimeMs(5000);
+    // 10s is still pending in module memory — nothing hits the stored counter.
+    expect(ach.summary().counters.timePlayedMs).toBeUndefined();
+
+    ach.addPlayTimeMs(5000);   // pending reaches 15s → folded into storage in one chunk
+    expect(ach.summary().counters.timePlayedMs).toBe(15000);
+
+    ach.addPlayTimeMs(5000);   // pending was zeroed by the flush — accumulating afresh
+    expect(ach.summary().counters.timePlayedMs).toBe(15000);
+  });
+});
+
 describe('unlock short-circuit + consumeToast', () => {
   it('returns null when there is nothing queued', async () => {
     const { ach } = await fresh();
@@ -179,6 +263,23 @@ describe('unlock short-circuit + consumeToast', () => {
     expect(ach.summary().unlockedSet.first_daily.shownAt).toBeNull();
     ach.consumeToast();
     expect(ach.summary().unlockedSet.first_daily.shownAt).toEqual(expect.any(String));
+  });
+
+  it('ignores an unlock whose definition is missing from the catalogue', async () => {
+    const { ach } = await fresh();
+    // ACHIEVEMENTS is the live module array: drop first_zen so unlock('first_zen')
+    // finds no definition and takes its defensive early-return — no record
+    // persisted, no toast queued. resetModules isolates this per-test, but
+    // restore in finally anyway so later asserts in this test stay honest.
+    const idx = ach.ACHIEVEMENTS.findIndex(a => a.id === 'first_zen');
+    const [removed] = ach.ACHIEVEMENTS.splice(idx, 1);
+    try {
+      ach.notifyMode('zen');
+      expect(ach.summary().unlocked).toBe(0);
+      expect(ach.consumeToast()).toBeNull();
+    } finally {
+      ach.ACHIEVEMENTS.splice(idx, 0, removed);
+    }
   });
 
   it('drops a queued toast whose unlock record was wiped underneath it', async () => {

@@ -71,6 +71,12 @@ jobs:
           set -euo pipefail
           ESBUILD=node_modules/.bin/esbuild
           HTMLMIN=node_modules/.bin/html-minifier-terser
+          # Fingerprinted bundle name: content-addressed by commit, so it can be
+          # cached forever (immutable header appended to _headers below). This
+          # also sidesteps zone-level cache rules that override no-cache on JS —
+          # a stale copy of main.<sha>.js is by definition the right copy.
+          SHA8="${GITHUB_SHA:0:8}"
+          BUNDLE="main.${SHA8}.js"
 
           # Bundle the ES-module entrypoint. --format=esm preserves the
           # `<script type="module">` contract; --target=es2022 keeps the output
@@ -81,22 +87,28 @@ jobs:
             --format=esm \
             --target=es2022 \
             --legal-comments=none \
-            --outfile=dist/main.bundle.js
+            --outfile="dist/${BUNDLE}"
 
           # The bundle now contains every reachable src/*.js, so the originals
           # no longer need to be published. Dropping them also prevents stale
           # un-minified copies from being served via direct URL.
           rm -rf dist/src
 
-          # Point index.html at the bundled entrypoint. GNU sed (ubuntu) is fine
-          # with -i without a backup suffix.
-          sed -i 's|/src/main.js|/main.bundle.js|' dist/index.html
+          # Point index.html (script src + modulepreload) at the bundle. GNU
+          # sed (ubuntu) is fine with -i without a backup suffix.
+          sed -i "s|/src/main.js|/${BUNDLE}|g" dist/index.html
 
-          # Rewrite sw.js PRECACHE: drop every '/src/...' entry, add the bundle
-          # once after '/favicon.svg'. CACHEABLE_PREFIXES still contains '/src/'
-          # but that's harmless now — no path under /src/ will ever match.
+          # Rewrite sw.js: drop every '/src/...' PRECACHE entry, add the bundle
+          # once after '/favicon.svg', and repoint the MAIN_ENTRY core-asset
+          # const. CACHEABLE_PREFIXES already includes '/main.' so the bundle
+          # is runtime-cacheable under any fingerprint.
           sed -i "/^  '\/src\//d" dist/sw.js
-          sed -i "s|'/favicon.svg',|'/favicon.svg',\n  '/main.bundle.js',|" dist/sw.js
+          sed -i "s|'/favicon.svg',|'/favicon.svg',\n  '/${BUNDLE}',|" dist/sw.js
+          sed -i "s|const MAIN_ENTRY = '/src/main.js';|const MAIN_ENTRY = '/${BUNDLE}';|" dist/sw.js
+
+          # Immutable caching for the fingerprinted bundle (exact-path stanza —
+          # Pages _headers has no mid-path wildcard).
+          printf '\n/%s\n  Cache-Control: public, max-age=31536000, immutable\n' "$BUNDLE" >> dist/_headers
 
           # Assert the rewrites actually applied. These seds are coupled to the
           # source formatting (indent, trailing comma); if upstream changes break
@@ -104,14 +116,18 @@ jobs:
           # rm -rf'd — index.html would 404 the whole app while CI stays green.
           # Fail loud instead. (Anchored '^[[:space:]]*'/src/' matches PRECACHE
           # entries only, not the const CACHEABLE_PREFIXES = ['/src/', ...] line.)
-          grep -q '/main.bundle.js' dist/index.html \
-            || { echo "::error::index.html was not repointed to /main.bundle.js"; exit 1; }
+          grep -q "/${BUNDLE}" dist/index.html \
+            || { echo "::error::index.html was not repointed to /${BUNDLE}"; exit 1; }
           ! grep -q '/src/main.js' dist/index.html \
             || { echo "::error::index.html still references the unbundled /src/main.js"; exit 1; }
-          grep -q "'/main.bundle.js'," dist/sw.js \
-            || { echo "::error::sw.js precache is missing the /main.bundle.js entry"; exit 1; }
+          grep -q "'/${BUNDLE}'," dist/sw.js \
+            || { echo "::error::sw.js precache is missing the /${BUNDLE} entry"; exit 1; }
+          grep -q "const MAIN_ENTRY = '/${BUNDLE}';" dist/sw.js \
+            || { echo "::error::sw.js MAIN_ENTRY was not repointed to the bundle"; exit 1; }
           ! grep -qE "^[[:space:]]*'/src/" dist/sw.js \
             || { echo "::error::sw.js still precaches /src/ paths after rewrite"; exit 1; }
+          grep -q "/${BUNDLE}" dist/_headers \
+            || { echo "::error::_headers is missing the immutable stanza for /${BUNDLE}"; exit 1; }
 
           # Minify CSS and the service worker in place. --allow-overwrite lets
           # esbuild read and write the same path in one invocation.
@@ -129,7 +145,7 @@ jobs:
             -o dist/index.html dist/index.html
 
           echo "Post-bundle dist/ size: $(du -sh dist | cut -f1)"
-          echo "Bundle size: $(du -h dist/main.bundle.js | cut -f1)"
+          echo "Bundle size: $(du -h "dist/${BUNDLE}" | cut -f1)"
 
       # Parse every JS file in dist/ with `node --check`. Catches syntax
       # errors that would otherwise ship to prod and leave the app stuck on

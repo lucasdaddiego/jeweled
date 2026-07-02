@@ -20,6 +20,7 @@
     "check": "find src -name '*.js' -print0 | xargs -0 -n1 node --check",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "node test-e2e/smoke.spec.mjs",
     "coverage": "vitest run --coverage"
   },
   "devDependencies": {
@@ -27,6 +28,7 @@
     "esbuild": "0.28.1",
     "html-minifier-terser": "7.2.0",
     "jsdom": "29.1.1",
+    "playwright": "1.61.1",
     "vitest": "4.1.9",
     "wrangler": "4.105.0"
   },

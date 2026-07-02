@@ -16,6 +16,7 @@ function defaultState() {
       totalRunsPlayed: 0,
       lastPlayedAt: null,
       saveState: null,
+      gallery: [],        // painting-mode keepsakes: [{ dataUrl, at }], newest first, capped
     },
     classic: {
       highestUnlocked: 1,
@@ -41,11 +42,13 @@ function defaultState() {
       haptic: true,
       eyes: true,
       paintingMode: false,
+      sound: true,         // procedural SFX + zen pad — see src/sound.js
+      gemStyle: 'color',   // 'color' (colored squares) | 'shapes' (colorblind-friendly distinct silhouettes)
       language: 'auto',   // 'auto' | 'en' | 'es' — see src/i18n.js
     },
     playHistory: {},
     powerups: {
-      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0 },
+      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 0 },
     },
   };
 }
@@ -224,6 +227,42 @@ export function reset() {
     localStorage.removeItem(STORAGE_KEY);
   } catch (err) {
     console.warn('storage.reset failed:', err);
+  }
+}
+
+// === Save export / import ===
+// Portable save code: 'JWLD1.' + base64(utf8(JSON)). Lets players move
+// progress between devices without any backend. TextEncoder/TextDecoder keep
+// it unicode-safe (player names can contain anything).
+const EXPORT_PREFIX = 'JWLD1.';
+
+export function exportString() {
+  const bytes = new TextEncoder().encode(JSON.stringify(load()));
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return EXPORT_PREFIX + btoa(bin);
+}
+
+export function importString(code) {
+  try {
+    const trimmed = String(code || '').trim();
+    if (!trimmed.startsWith(EXPORT_PREFIX)) return { ok: false, reason: 'format' };
+    const bin = atob(trimmed.slice(EXPORT_PREFIX.length));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || typeof parsed !== 'object' || !parsed.profile || !parsed.settings) {
+      return { ok: false, reason: 'shape' };
+    }
+    // Same defensive path as load(): defaults + deepMerge so a crafted code
+    // can't drop required keys or pollute prototypes.
+    cache = deepMerge(defaultState(), parsed);
+    cache.version = STORAGE_VERSION;
+    _readOnly = false;
+    saveAll();
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'parse' };
   }
 }
 

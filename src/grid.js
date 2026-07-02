@@ -106,23 +106,32 @@ export function applyGravity(g, direction = 'down') {
 // just-spawned gems has its type swapped to the smallest change that re-enables play.
 // This keeps the existing board layout intact (no reshuffle) while ensuring the
 // player always has at least one move waiting.
-export function spawnNew(g, rng = Math.random, direction = 'down') {
+export function spawnNew(g, rng = Math.random, direction = 'down', opts = null) {
   const spawns = [];
   for (let c = 0; c < GRID; c++) {
+    // Count this column's empties first: each spawned gem starts exactly
+    // `empties` cells outside the board (fromY = r - empties going down,
+    // r + empties going up), so all gems in a column travel the same
+    // distance at the same speed — a rigid falling stack. The previous
+    // formula (-1 - r) inverted the stack: the deepest-landing gem started
+    // farthest out and visibly passed through its neighbors mid-fall.
+    let empties = 0;
+    for (let r = 0; r < GRID; r++) if (g[r][c] === null) empties++;
+    if (empties === 0) continue;
     if (direction === 'down') {
       for (let r = 0; r < GRID; r++) {
         if (g[r][c] === null) {
-          const cell = pickSpawn(rng);
+          const cell = pickSpawn(rng, opts);
           g[r][c] = cell;
-          spawns.push({ r, c, cell, fromY: -1 - r });
+          spawns.push({ r, c, cell, fromY: r - empties });
         }
       }
     } else {
       for (let r = GRID - 1; r >= 0; r--) {
         if (g[r][c] === null) {
-          const cell = pickSpawn(rng);
+          const cell = pickSpawn(rng, opts);
           g[r][c] = cell;
-          spawns.push({ r, c, cell, fromY: GRID + (GRID - 1 - r) });
+          spawns.push({ r, c, cell, fromY: r + empties });
         }
       }
     }
@@ -157,12 +166,19 @@ function biasSpawnsToSolvable(g, spawns) {
   }
 }
 
-function pickSpawn(rng) {
+function pickSpawn(rng, opts = null) {
   const type = (rng() * TYPES) | 0;
   // Roll for special-gem replacement. Cumulative probabilities.
   const roll = rng();
   const p = SPAWN_RATES;
   let cutoff = 0;
+  // Mode-specific extra special (Blitz: TIME_PLUS clock gems). Checked first
+  // so its rate is exact; only ever set for non-seeded modes, so Daily/Puzzle
+  // determinism is untouched.
+  if (opts && opts.timePlusRate) {
+    cutoff += 1 / opts.timePlusRate;
+    if (roll < cutoff) return newCell(type, SPECIAL.TIME_PLUS);
+  }
   cutoff += 1 / p.GRAVITY;     if (roll < cutoff) return newCell(type, SPECIAL.GRAVITY);
   cutoff += 1 / p.TIME_BOMB;   if (roll < cutoff) return newCell(type, SPECIAL.TIME_BOMB, TIME_BOMB_START);
   cutoff += 1 / p.WILDCARD;    if (roll < cutoff) return newCell(type, SPECIAL.WILDCARD);

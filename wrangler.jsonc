@@ -2,7 +2,14 @@
   "name": "jeweled",
   "compatibility_date": "2026-05-23",
   // Publish only the files in dist/ — populated by scripts/build.sh. This keeps
-  // dev tooling (.claude/, scripts/) out of the public origin. dist/_redirects
-  // also 404s those paths as defense-in-depth.
+  // dev tooling (.claude/, scripts/) out of the public origin; dist/404.html
+  // gives unknown paths a real 404 instead of the SPA shell.
   "pages_build_output_dir": "dist"
+  // Daily leaderboard (optional): create the namespace with
+  //   npx wrangler kv namespace create LEADERBOARD
+  // then uncomment and paste the id. The game hides the leaderboard UI until
+  // the /api/leaderboard endpoint answers, so leaving this off is safe.
+  // ,"kv_namespaces": [
+  //   { "binding": "LEADERBOARD", "id": "<namespace-id>" }
+  // ]
 }

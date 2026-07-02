@@ -341,3 +341,45 @@ describe('serialize / deserialize / reseedNextId', () => {
     expect(newCell(0).id).toBe(c.id + 1);
   });
 });
+
+describe('spawnNew — fall-in geometry', () => {
+  // Every gem spawned into one column must travel the same distance (the
+  // column's empty count), so the refill reads as a rigid falling stack.
+  // The old fromY formula (-1 - r) inverted the stack: the deepest-landing
+  // gem started farthest out and visibly crossed its neighbors mid-fall.
+  it('down: all spawns in a column travel exactly emptyCount cells', () => {
+    const g = makeEmptyGrid();
+    // Bottom 5 rows full; top 3 rows empty (post-gravity shape).
+    for (let r = 3; r < GRID; r++) for (let c = 0; c < GRID; c++) g[r][c] = newCell((r + c) % TYPES);
+    const spawns = spawnNew(g, mulberry32(5), 'down');
+    expect(spawns).toHaveLength(3 * GRID);
+    for (const s of spawns) expect(s.r - s.fromY).toBe(3);
+  });
+
+  it('up: all spawns in a column travel exactly emptyCount cells', () => {
+    const g = makeEmptyGrid();
+    // Top 6 rows full; bottom 2 empty (post-up-gravity shape).
+    for (let r = 0; r < GRID - 2; r++) for (let c = 0; c < GRID; c++) g[r][c] = newCell((r + c) % TYPES);
+    const spawns = spawnNew(g, mulberry32(6), 'up');
+    expect(spawns).toHaveLength(2 * GRID);
+    for (const s of spawns) expect(s.fromY - s.r).toBe(2);
+  });
+});
+
+describe('spawnNew — mode-specific spawn opts (Blitz TIME_PLUS)', () => {
+  it('spawns TIME_PLUS gems when opts.timePlusRate is set', () => {
+    const g = makeEmptyGrid();
+    for (let r = 2; r < GRID; r++) for (let c = 0; c < GRID; c++) g[r][c] = newCell((r + c) % TYPES);
+    // timePlusRate 1 → the special roll always lands in the TIME_PLUS band.
+    const spawns = spawnNew(g, mulberry32(3), 'down', { timePlusRate: 1 });
+    expect(spawns.length).toBeGreaterThan(0);
+    expect(spawns.every(s => s.cell.special === SPECIAL.TIME_PLUS)).toBe(true);
+  });
+
+  it('never spawns TIME_PLUS without the opt (seeded control)', () => {
+    const g = makeEmptyGrid();
+    for (let r = 2; r < GRID; r++) for (let c = 0; c < GRID; c++) g[r][c] = newCell((r + c) % TYPES);
+    const spawns = spawnNew(g, mulberry32(3), 'down');
+    expect(spawns.some(s => s.cell.special === SPECIAL.TIME_PLUS)).toBe(false);
+  });
+});

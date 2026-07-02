@@ -6,16 +6,19 @@
 //
 // Bump CACHE on every deploy so old caches are swept on activate.
 
-const CACHE = 'gem-match-v33';
+const CACHE = 'gem-match-v34';
 
 const PRECACHE = [
   '/',
-  '/index.html',
   '/style.css',
   '/manifest.json',
   '/favicon.svg',
   '/src/main.js',
   '/src/build.js',
+  '/src/sound.js',
+  '/src/leaderboard.js',
+  '/src/dailyMeta.js',
+  '/src/shareImage.js',
   '/src/config.js',
   '/src/grid.js',
   '/src/matcher.js',
@@ -53,6 +56,9 @@ const PRECACHE = [
   '/src/scenes/puzzleSelect.js',
   '/src/scenes/stats.js',
   '/src/scenes/result.js',
+  '/src/scenes/gempedia.js',
+  '/src/scenes/dailyHistory.js',
+  '/src/scenes/gallery.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable.png',
@@ -75,13 +81,21 @@ const PRECACHE = [
 // Whitelist of URL prefixes we cache opportunistically on fetch. Anything
 // outside the whitelist passes through without populating the cache — keeps
 // quota predictable and avoids accidentally pinning stale third-party data.
-const CACHEABLE_PREFIXES = ['/src/', '/icons/'];
-const CACHEABLE_EXACT = new Set(['/', '/index.html', '/style.css', '/manifest.json', '/favicon.svg']);
+const CACHEABLE_PREFIXES = ['/src/', '/icons/', '/main.'];
+const CACHEABLE_EXACT = new Set(['/', '/style.css', '/manifest.json', '/favicon.svg']);
 
 function isCacheable(pathname) {
   if (CACHEABLE_EXACT.has(pathname)) return true;
   return CACHEABLE_PREFIXES.some(p => pathname.startsWith(p));
 }
+
+// The assets the app cannot boot without. Everything else precaches
+// best-effort, but a hole in one of these must fail the install (the old
+// cache stays live and a retry happens on the next visit) rather than
+// activate a cache that can't start the game offline.
+// MAIN_ENTRY is rewritten to the fingerprinted bundle path at deploy time.
+const MAIN_ENTRY = '/src/main.js';
+const CORE = ['/', '/style.css', MAIN_ENTRY];
 
 self.addEventListener('install', e => {
   // Pre-cache so first offline load works. cache: 'no-cache' bypasses HTTP cache.
@@ -89,8 +103,15 @@ self.addEventListener('install', e => {
     caches.open(CACHE)
       .then(c => Promise.all(PRECACHE.map(a =>
         fetch(a, { cache: 'no-cache' })
-          .then(r => r.ok ? c.put(a, r) : null)
-          .catch(() => null)
+          .then(r => {
+            if (r.ok) return c.put(a, r);
+            if (CORE.includes(a)) throw new Error('core precache failed: ' + a);
+            return null;
+          })
+          .catch(err => {
+            if (CORE.includes(a)) throw err;
+            return null;
+          })
       )))
       .then(() => self.skipWaiting())
   );
@@ -145,9 +166,7 @@ self.addEventListener('fetch', e => {
         // (e.g. when an install-time precache fetch for index.html transiently
         // failed but install still completed).
         if (e.request.mode === 'navigate') {
-          return caches.match('/')
-            .then(shell => shell || caches.match('/index.html'))
-            .then(shell => shell || Response.error());
+          return caches.match('/').then(shell => shell || Response.error());
         }
         return Response.error();
       }))

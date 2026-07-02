@@ -438,3 +438,68 @@ describe('target-mode overlay', () => {
     expect(overlay.isModalOpen()).toBe(false);
   });
 });
+
+// ---- undo slot + milestone banking (2026-07 additions) -----------------------
+
+describe('undo slot', () => {
+  it('a successful undo handler spends the charge and snapshots', () => {
+    setCharges({ undo: 1 });
+    const undoFn = vi.fn(() => true);
+    overlay.setUndoHandler(undoFn);
+    const onIdle = vi.fn();
+    cascade.onIdleReached = onIdle;
+    slotButtons(drawPanel())[POWERUP_SLOTS.indexOf('undo')].onClick();
+    expect(undoFn).toHaveBeenCalledTimes(1);
+    expect(powerups.getCharges().undo).toBe(0);
+    expect(onIdle).toHaveBeenCalled();            // post-instant snapshot tail
+  });
+
+  it('a refused undo keeps the charge', () => {
+    setCharges({ undo: 1 });
+    overlay.setUndoHandler(() => false);
+    slotButtons(drawPanel())[POWERUP_SLOTS.indexOf('undo')].onClick();
+    expect(powerups.getCharges().undo).toBe(1);
+  });
+
+  it('no handler registered → click is a no-op', () => {
+    setCharges({ undo: 1 });
+    overlay.setUndoHandler(null);
+    slotButtons(drawPanel())[POWERUP_SLOTS.indexOf('undo')].onClick();
+    expect(powerups.getCharges().undo).toBe(1);
+  });
+});
+
+describe('pending-milestone banking', () => {
+  it('unbind auto-allocates pending charges to the first non-full slots', () => {
+    overlay.notifyMilestoneEarned(2);
+    overlay.unbind();
+    // Both banked into 'shuffle' (first slot, cap 3).
+    expect(powerups.getCharges().shuffle).toBe(2);
+    expect(overlay.getPendingMilestones()).toBe(0);
+  });
+
+  it('unbind stops banking when every slot is at cap (charges forfeit by design)', () => {
+    const full = {};
+    for (const s of POWERUP_SLOTS) full[s] = POWERUP_MAX_CHARGES;
+    setCharges(full);
+    overlay.notifyMilestoneEarned(1);
+    overlay.unbind();
+    for (const s of POWERUP_SLOTS) expect(powerups.getCharges()[s]).toBe(POWERUP_MAX_CHARGES);
+  });
+
+  it('setPendingMilestones restores the pending count and reopens the popup', () => {
+    overlay.setPendingMilestones(1);
+    expect(overlay.getPendingMilestones()).toBe(1);
+    expect(overlay.isModalOpen()).toBe(true);
+    overlay.setPendingMilestones(0);
+    expect(overlay.getPendingMilestones()).toBe(0);
+  });
+
+  it('setPendingMilestones does not open the popup when all slots are full', () => {
+    const full = {};
+    for (const s of POWERUP_SLOTS) full[s] = POWERUP_MAX_CHARGES;
+    setCharges(full);
+    overlay.setPendingMilestones(1);
+    expect(overlay.isModalOpen()).toBe(false);
+  });
+});

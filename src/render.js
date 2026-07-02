@@ -1,6 +1,6 @@
 // Render: sprite atlas + drawBoard + drawHUD + screen shake transform.
 
-import { GRID, SPECIAL, DEFAULT_EMOJI } from './config.js';
+import { GRID, SPECIAL, DEFAULT_EMOJI, SHAPES_EMOJI } from './config.js';
 import * as particles from './particles.js';
 import * as floaters from './floaters.js';
 import * as waves from './waves.js';
@@ -147,6 +147,12 @@ export function resize() {
     getComputedStyle(document.documentElement).getPropertyValue('--sat'),
   ) || 0;
   layout.safeTop = safeTop;
+  // Bottom inset too: on home-indicator iPhones in standalone mode this is
+  // ~34px — without it the bottom power-up strip sits under the indicator.
+  const safeBottom = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--sab'),
+  ) || 0;
+  layout.safeBottom = safeBottom;
   // Reserve a fixed HUD strip at the top; board sits in the remaining area.
   // Two HUD rows (e.g. Classic level + progress bar) need the room; tighter
   // on tiny screens. Base padding bumped from 14→22 so HUD content has
@@ -180,7 +186,7 @@ export function resize() {
   // so the two feel like one cohesive unit.
   const panelGap = layout.panelSide === 'right' && layout.panelW > 0 ? 10 : 0;
   const availW = Math.max(1, viewportW - layout.panelW - panelGap);
-  const availH = Math.max(1, viewportH - layout.hudH - 20 - layout.panelH);
+  const availH = Math.max(1, viewportH - layout.hudH - 20 - layout.panelH - safeBottom);
   const minDim = Math.max(1, Math.min(availW - 16, availH));
   layout.cellSize = Math.max(1, Math.floor((minDim * 0.98) / GRID));
   layout.boardSize = layout.cellSize * GRID;
@@ -262,6 +268,39 @@ function loadFluent(emoji) {
   return p;
 }
 
+// Custom-painted gem glyphs. The type-6 "dark" shape token is hand-drawn: the
+// OS 🌙/✖️ glyphs are dark-on-dark (invisible on the board), emoji ink boxes
+// don't center on the text baseline, and an X token read as a "locked piece".
+// So: a light backing disc with a centered dark crescent — the board's only
+// concave silhouette, unmistakable from the other six shapes. Extend the map
+// if another glyph ever needs hand-drawing.
+const CUSTOM_GLYPHS = new Map([
+  ['🌙', drawMoonToken],
+]);
+
+function drawMoonToken(actx, slotPx, slotIndex) {
+  const cx = slotIndex * slotPx + slotPx / 2;
+  const cy = slotPx / 2;
+  const backing = 'rgba(232, 232, 242, 0.95)';
+  actx.save();
+  actx.fillStyle = backing;
+  actx.beginPath();
+  actx.arc(cx, cy, slotPx * 0.44, 0, Math.PI * 2);
+  actx.fill();
+  // Crescent = dark disc with a backing-colored disc carved out of its
+  // upper-right. Both circles stay inside the backing, so the carve color
+  // blends invisibly.
+  actx.fillStyle = '#3d3d46';
+  actx.beginPath();
+  actx.arc(cx, cy, slotPx * 0.28, 0, Math.PI * 2);
+  actx.fill();
+  actx.fillStyle = backing;
+  actx.beginPath();
+  actx.arc(cx + slotPx * 0.14, cy - slotPx * 0.10, slotPx * 0.24, 0, Math.PI * 2);
+  actx.fill();
+  actx.restore();
+}
+
 // Draw a single OS-emoji fallback into the atlas slot at (slotIndex). Used
 // while Fluent SVGs are still loading and as a last resort if a fetch fails.
 function drawEmojiFallback(actx, slotPx, slotIndex, emoji) {
@@ -273,6 +312,17 @@ function drawEmojiFallback(actx, slotPx, slotIndex, emoji) {
   actx.restore();
 }
 
+// Active gem glyph set — swapped by setGemStyle (settings.gemStyle). The
+// 'shapes' set is the colorblind mode: distinct silhouettes per type.
+let gemEmojiSet = DEFAULT_EMOJI;
+
+export function setGemStyle(style) {
+  const next = style === 'shapes' ? SHAPES_EMOJI : DEFAULT_EMOJI;
+  if (next === gemEmojiSet) return;
+  gemEmojiSet = next;
+  buildAtlas();
+}
+
 export function buildAtlas() {
   // Guard against being called before resize() has run with a real viewport
   // (e.g. preview tab momentarily reporting 0×0). Skip; window 'resize' will
@@ -280,7 +330,7 @@ export function buildAtlas() {
   if (layout.cellSize <= 0 || !DPR || DPR <= 0) return;
   const slotPx = Math.max(1, Math.ceil(layout.cellSize * DPR));
   atlasCellPx = slotPx;
-  const w = slotPx * DEFAULT_EMOJI.length;
+  const w = slotPx * gemEmojiSet.length;
   const h = slotPx;
   atlas = new OffscreenCanvas(w, h);
   const actx = atlas.getContext('2d');
@@ -290,8 +340,15 @@ export function buildAtlas() {
   // doesn't draw stale glyphs onto a stale atlas.
   const atlasAtBuild = atlas;
 
-  for (let i = 0; i < DEFAULT_EMOJI.length; i++) {
-    const emoji = DEFAULT_EMOJI[i];
+  for (let i = 0; i < gemEmojiSet.length; i++) {
+    const emoji = gemEmojiSet[i];
+    // Hand-painted tokens skip the emoji/Fluent pipeline entirely (also
+    // avoids a pointless "no Fluent mapping" warn on every rebuild).
+    const painter = CUSTOM_GLYPHS.get(emoji);
+    if (painter) {
+      painter(actx, slotPx, i);
+      continue;
+    }
     const cached = fluentCache.get(emoji);
     if (cached) {
       drawFluentIntoSlot(actx, slotPx, i, cached);
@@ -395,6 +452,7 @@ export function drawBoard(grid, opts = {}) {
   const shakeAmp = reducedMotion ? 0 : (opts.shakeAmp || 0);
   const settings = opts.settings || {};
   const hint = opts.hint || null;
+  const iceMap = opts.iceMap || null;   // Classic ice modifier: 8x8 layer counts
   // Idle wobble — after 5s of inactivity the board gently sways like it's
   // breathing. ±2deg max, slow sinusoid. Disabled under reduced-motion.
   const idleMs = reducedMotion ? 0 : (opts.idleMs || 0);
@@ -421,6 +479,17 @@ export function drawBoard(grid, opts = {}) {
   }
 
   const cs = layout.cellSize;
+
+  // Gems — clipped to the board frame (+pad) so refill/entry gems entering
+  // from off-board emerge from behind the frame edge instead of streaking
+  // across the HUD. FX layers below stay unclipped on purpose: score
+  // floaters fly to the HUD counter and waves ripple past the frame.
+  const clipPad = 8;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(layout.boardX - clipPad, layout.boardY - clipPad,
+           layout.boardSize + clipPad * 2, layout.boardSize + clipPad * 2);
+  ctx.clip();
 
   // Gems
   for (let r = 0; r < GRID; r++) {
@@ -455,6 +524,36 @@ export function drawBoard(grid, opts = {}) {
       ctx.globalAlpha = 1;
     }
   }
+
+  // Ice overlays (Classic modifier) — drawn over the gems at their GRID
+  // positions (ice belongs to the board cell, not the falling gem).
+  if (iceMap) {
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        if (iceMap[r][c] > 0) {
+          const x = layout.boardX + c * cs;
+          const y = layout.boardY + r * cs;
+          ctx.save();
+          roundRect(ctx, x + 1, y + 1, cs - 2, cs - 2, cs * 0.14);
+          ctx.fillStyle = 'rgba(160, 210, 255, 0.32)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(200, 235, 255, 0.75)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          // Simple crack marks so the frost reads as breakable.
+          ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + cs * 0.3, y + cs * 0.25);
+          ctx.lineTo(x + cs * 0.5, y + cs * 0.5);
+          ctx.lineTo(x + cs * 0.4, y + cs * 0.75);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+  ctx.restore();   // end gem clip
 
   // Waves + bolts + particles + floaters drawn in board space.
   // Order: waves (background ring), bolts (lightning/star streaks above),
@@ -575,6 +674,7 @@ function drawSpecialOverlay(ctx, cell, x, y, size) {
       break;
     }
     case SPECIAL.WILDCARD:  drawEmojiBadge(ctx, x, y, size, '🃏', '#7c3aed'); break;
+    case SPECIAL.TIME_PLUS: drawEmojiBadge(ctx, x, y, size, '⏱', '#4dd0e1'); break;
     case SPECIAL.COIN:      drawEmojiBadge(ctx, x, y, size, '🪙', '#ffd166'); break;
     case SPECIAL.FIRE:      drawEmojiBadge(ctx, x, y, size, '🔥', '#ff5722'); break;
     case SPECIAL.LIGHTNING: drawEmojiBadge(ctx, x, y, size, '⚡', '#ffeb3b'); break;
@@ -818,17 +918,21 @@ export function drawButton(x, y, w, h, label, opts = {}) {
   ctx.fillStyle = disabled ? '#888' : '#fff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // Ellipsis padding scales down for small square buttons — a fixed 24px
+  // left a 36px-wide button only 12px of label room, ellipsizing even a
+  // single emoji into '…'.
+  const labelPad = Math.min(24, Math.floor(w * 0.3));
   if (opts.subtitle) {
     // Two-line layout: title in the upper third, subtitle in the lower third,
     // with a clear gap so they never visually collide.
     ctx.font = (opts.font || fontString(Math.floor(h * 0.36)));
-    fillTextEllipsized(ctx, label, x + w / 2, y + h * 0.36, w - 24);
+    fillTextEllipsized(ctx, label, x + w / 2, y + h * 0.36, w - labelPad);
     ctx.font = fontString(Math.floor(h * 0.20));
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    fillTextEllipsized(ctx, opts.subtitle, x + w / 2, y + h * 0.72, w - 24);
+    fillTextEllipsized(ctx, opts.subtitle, x + w / 2, y + h * 0.72, w - labelPad);
   } else {
     ctx.font = (opts.font || fontString(Math.floor(h * 0.4)));
-    fillTextEllipsized(ctx, label, x + w / 2, y + h / 2, w - 24);
+    fillTextEllipsized(ctx, label, x + w / 2, y + h / 2, w - labelPad);
   }
   ctx.restore();
 }

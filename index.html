@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <!-- No user-scalable=no: iOS ignores it anyway and Android honoring it
+       blocks low-vision pinch zoom; touch-action:none on the canvas already
+       prevents gameplay pinches. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#7c3aed">
   <meta name="description" content="A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.">
   <title>Jeweled</title>
@@ -11,9 +14,13 @@
   <link rel="icon" href="/icons/icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <link rel="stylesheet" href="/style.css">
+  <link rel="modulepreload" href="/src/main.js">
 </head>
 <body>
   <canvas id="game" role="application" aria-label="Jeweled game board"></canvas>
+  <!-- Screen-reader announcements (scene changes, results). The canvas is
+       invisible to assistive tech; this is its voice. -->
+  <div id="sr-live" aria-live="polite" role="status"></div>
   <div id="boot-splash">
     <div class="boot-gem"></div>
     <div class="boot-title">JEWELED</div>

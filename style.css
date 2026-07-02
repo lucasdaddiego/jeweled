@@ -61,8 +61,32 @@ body.daily-bg {
   background-size: 400% 400%;
 }
 
-/* Name-entry modal input — single DOM element we keep */
-#name-input-wrap {
+/* Visually-hidden live region for screen-reader announcements. Standard
+   sr-only recipe: keep it in the accessibility tree but off-screen. */
+#sr-live {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Boot-failure notice (unsupported browser) — swapped in for the loading
+   dots by main.js's boot() catch. */
+.boot-error {
+  max-width: 520px;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #f3f0ff;
+}
+
+/* Name-entry + save-import modal inputs — the only DOM UI we keep */
+#name-input-wrap,
+#import-input-wrap {
   position: fixed;
   inset: 0;
   display: flex;

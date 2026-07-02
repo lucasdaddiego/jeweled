@@ -7,16 +7,20 @@ import * as particles from '../particles.js';
 import * as waves from '../waves.js';
 import * as bolts from '../bolts.js';
 import * as drag from '../dragInput.js';
+import * as sound from '../sound.js';
 import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard } from '../grid.js';
-import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
-import { setScene } from '../main.js';
-import { BLITZ_DURATION_MS, SPECIAL } from '../config.js';
+import { spawnScore, spawnText, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
+import { setScene, clockMs } from '../main.js';
+import {
+  BLITZ_DURATION_MS, SPECIAL, BLITZ_TIME_PLUS_RATE, BLITZ_TIME_PLUS_BONUS_MS,
+  BLITZ_STREAK_WINDOW_MS, BLITZ_STREAK_MAX, BLITZ_STREAK_BONUS,
+} from '../config.js';
 import { GEM_PARTICLE_PALETTES } from '../render.js';
 
 let grid = null;
@@ -27,14 +31,25 @@ let cursorX = 0, cursorY = 0;
 let timeLeftMs = 0;
 let resultTriggered = false;
 let lastClearCenter = null;
+let lastTickSecond = 0;   // last sub-10s second we played the countdown tick for
+// Speed streak: consecutive moves committed within the window build it up.
+let streak = 0;
+let lastMoveAt = -Infinity;
 
 export function enter() {
   document.body.className = '';
   clearEffects();   // drop any still-alive FX from the previous run before first draw
   grid = createBoard();
-  cascade = new Cascade(grid, { mode: 'blitz' });
+  cascade = new Cascade(grid, {
+    mode: 'blitz',
+    // Blitz-only TIME_PLUS clock gems drop in from the top.
+    spawnOpts: { timePlusRate: BLITZ_TIME_PLUS_RATE },
+  });
   timeLeftMs = BLITZ_DURATION_MS;
   resultTriggered = false;
+  lastTickSecond = 0;
+  streak = 0;
+  lastMoveAt = -Infinity;
   hint = null;
   storage.saveKey('profile', { lastPlayedMode: 'blitz' });
   drag.bind(grid, cascade);
@@ -49,7 +64,28 @@ export function enter() {
       palettes: GEM_PARTICLE_PALETTES,
       haptic: storage.getSettings().haptic !== false,
     });
+    // TIME_PLUS gems in the clear grant clock time — the whole point of them.
+    const timeGems = cells.filter(c => c.special === SPECIAL.TIME_PLUS).length;
+    if (timeGems > 0 && !resultTriggered) {
+      timeLeftMs = Math.min(BLITZ_DURATION_MS, timeLeftMs + timeGems * BLITZ_TIME_PLUS_BONUS_MS);
+      spawnText(lastClearCenter.x, lastClearCenter.y - 60,
+        i18n.t('blitz.timeBonus', { n: (timeGems * BLITZ_TIME_PLUS_BONUS_MS) / 1000 }),
+        '#4dd0e1', 22);
+    }
     achievements.notifyMatchCleared(cells.length, depth);
+  };
+  cascade.onMoveCommitted = () => {
+    // Speed streak: chain moves quickly to build it; each level past 1 pays a
+    // flat bonus. Resets when the gap exceeds the window.
+    const now = clockMs();
+    streak = (now - lastMoveAt) <= BLITZ_STREAK_WINDOW_MS ? Math.min(BLITZ_STREAK_MAX, streak + 1) : 1;
+    lastMoveAt = now;
+    if (streak >= 2) {
+      const bonus = (streak - 1) * BLITZ_STREAK_BONUS;
+      cascade.score += bonus;
+      spawnText(render.boardCenterX(), render.layout.boardY + 24,
+        i18n.t('blitz.streak', { n: streak }), '#ffd166', 18);
+    }
   };
   cascade.onSpecialActivated = (act) => {
     handleSpecialActivated(act, {
@@ -59,6 +95,7 @@ export function enter() {
     });
   };
   cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
+  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
   cascade.onScoreChanged = (newScore, delta) => {
     if (delta > 0 && lastClearCenter) {
       spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
@@ -103,8 +140,15 @@ export function update(dt) {
   // timer doesn't drain unfairly during long resolutions.
   if (!resultTriggered && cascade.state === STATE.IDLE) {
     timeLeftMs -= dt;
+    // Audible countdown for the last 10 seconds — one tick per second.
+    const sec = Math.ceil(timeLeftMs / 1000);
+    if (timeLeftMs > 0 && timeLeftMs < 10_000 && sec !== lastTickSecond) {
+      lastTickSecond = sec;
+      sound.blitzTick();
+    }
     if (timeLeftMs <= 0) {
       timeLeftMs = 0;
+      sound.timeUpHorn();
       finalize();
     }
   }
@@ -150,12 +194,15 @@ export function draw() {
     shadow: true,
   });
 
+  drawHintButton(boardR - btnW - 48, hudY + 2, cascade, grid, (h) => { hint = h; }, buttons, cursorX, cursorY, 36);
   render.drawBoard(grid, { shakeAmp: cascade.shakeAmp, settings: storage.getSettings(), hint, idleMs: cascade.idleSinceMs });
 }
 
 export function onPointer(evt) {
-  hint = null;
+  // Clear the hint only on 'down' — the release ('up') of the tap that PRESSED
+  // the hint button would otherwise erase the hint it just granted.
   if (evt.type === 'down') {
+    hint = null;
     for (let i = buttons.length - 1; i >= 0; i--) {
       const b = buttons[i];
       if (evt.x >= b.x && evt.x <= b.x + b.w && evt.y >= b.y && evt.y <= b.y + b.h) {

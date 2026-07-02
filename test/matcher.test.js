@@ -289,3 +289,54 @@ describe('analyzeSwapShape', () => {
       .toEqual({ matched: false, maxRun: 0, tShape: false });
   });
 });
+
+describe('findMatches — trailing-wildcard donation', () => {
+  // A failed run's trailing wildcards must be donated to the run that starts
+  // at the break: [red, WILD, blue, blue] contains a legitimate WILD+blue+blue
+  // run. The old per-consumer scanners attached the wildcard to the failed red
+  // run and dropped it — the match was invisible AND the swap that formed it
+  // was rejected (wouldSwapMatch uses the same scanner).
+  it('matches [X, W, Y, Y] horizontally as a Y-run through the wildcard', () => {
+    // Row 4 cols 2..5 = [0, W(6), 1, 1]; diag board is disturbed minimally.
+    // Vertical neighbors of the planted cells on diag(0) differ, so no
+    // accidental vertical runs form (verified by the exact cleared set).
+    const g = board(
+      { '4,2': 0, '4,3': 6, '4,4': 1, '4,5': 1 },
+      { '4,3': W },
+    );
+    const res = findMatches(g);
+    expect(clearedOf(res)).toEqual(['4,3', '4,4', '4,5']);
+    expect(res.toSpawn).toEqual([]);
+  });
+
+  it('matches [X, W, Y, Y] vertically as a Y-run through the wildcard', () => {
+    const g = board(
+      { '2,4': 0, '3,4': 6, '4,4': 1, '5,4': 1 },
+      { '3,4': W },
+    );
+    const res = findMatches(g);
+    expect(clearedOf(res)).toEqual(['3,4', '4,4', '5,4']);
+  });
+
+  it('does NOT donate wildcards consumed by a run that matched (greedy-left)', () => {
+    // [X, X, W, Y, Y] — the X,X,W run matches (len 3) and consumes the wild;
+    // the Y pair stays a pair.
+    const g = board(
+      { '4,1': 0, '4,2': 0, '4,3': 6, '4,4': 1, '4,5': 1 },
+      { '4,3': W },
+    );
+    const res = findMatches(g);
+    expect(clearedOf(res)).toEqual(['4,1', '4,2', '4,3']);
+  });
+
+  it('wouldSwapMatch accepts a swap that forms [W, Y, Y]', () => {
+    // Pre-swap: W at (4,3), Y at (4,4); the second Y sits above the target
+    // cell at (3,5). Swapping (3,5)↕(4,5) completes W,Y,Y in row 4.
+    const g = board(
+      { '4,2': 0, '4,3': 6, '4,4': 1, '3,5': 1, '4,5': 2 },
+      { '4,3': W },
+    );
+    expect(findMatches(g).cleared.size).toBe(0);       // stable pre-swap
+    expect(wouldSwapMatch(g, { r: 3, c: 5 }, { r: 4, c: 5 })).toBe(true);
+  });
+});

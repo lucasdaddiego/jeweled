@@ -4,15 +4,48 @@ import * as render from '../render.js';
 import * as storage from '../storage.js';
 import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
+import * as sound from '../sound.js';
+import * as leaderboard from '../leaderboard.js';
+import { shareCard } from '../shareImage.js';
+import { buildShareText } from '../dailyMeta.js';
 import { setScene } from '../main.js';
 import { LEVELS } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
 
+const SITE_URL = 'https://jeweled.daddiego.com.ar';
+
 let args = {};
 let buttons = [];
 let cursorX = 0, cursorY = 0;
+// Daily leaderboard state: null = loading/off, {ok:false} = backend absent
+// (block hidden), {ok:true, entries, rank?} = show.
+let lb = null;
+// Monotonic token so a slow response from a previous result screen can't
+// clobber this one's state.
+let lbToken = 0;
 
-export function enter(a = {}) { args = a || {}; document.body.className = ''; buttons = []; }
+export function enter(a = {}) {
+  args = a || {};
+  document.body.className = '';
+  buttons = [];
+  lb = null;
+  // End-of-run audio sting matched to the emotional beat.
+  if (args.outcome === 'lose') sound.loseThud();
+  else if (args.isNewBest || args.outcome === 'win') sound.winFanfare();
+  else sound.milestoneDing();
+
+  // Daily leaderboard: submit the counted run (spoofable, friendly — see
+  // functions/api/leaderboard/[date].js), or just fetch on replays. The
+  // backend is optional: {ok:false} keeps the block hidden entirely.
+  if (args.mode === 'daily' && args.date) {
+    const token = ++lbToken;
+    const name = storage.getProfile().playerName || 'Player';
+    const req = args.isReplay
+      ? leaderboard.fetchDaily(args.date)
+      : leaderboard.submitDaily(args.date, name, args.score | 0);
+    req.then(res => { if (token === lbToken) lb = res; });
+  }
+}
 export function exit() {}
 export function update(dt) {}
 
@@ -43,6 +76,7 @@ export function draw() {
       ? i18n.t('result.newBest')
       : i18n.t('result.bestEver', { score: i18n.formatNumber(best) });
     subtitle = `${i18n.t('result.scorePts', { score: i18n.formatNumber(args.score) })}\n${bestLine}`;
+    if ((args.streak || 0) >= 2) subtitle += `\n${i18n.t('daily.streak', { n: args.streak })}`;
   } else if (args.mode === 'blitz') {
     title = i18n.t('result.blitzDone');
     // isNewBest + prevBest are passed in from gameBlitz.finalize() before the
@@ -112,24 +146,67 @@ export function draw() {
     }
   } else if (args.mode === 'daily') {
     drawHitButton(ax, ay, btnW, btnH, i18n.t('common.share'), shareDaily); ay += btnH + gap;
+    drawHitButton(ax, ay, btnW, btnH, i18n.t('result.viewHistory'),
+      () => setScene('dailyHistory')); ay += btnH + gap;
   }
   drawHitButton(ax, ay, btnW, btnH, i18n.t('common.title'), () => setScene('title'));
+  ay += btnH;
+
+  // Daily leaderboard block (only when the optional backend answered).
+  if (args.mode === 'daily' && lb && lb.ok) drawLeaderboard(w, ay + 22);
+}
+
+function drawLeaderboard(w, y) {
+  const ctx = render.ctxRef();
+  render.drawText(i18n.t('leaderboard.title'), w / 2, y, {
+    font: 'bold 16px sans-serif', align: 'center', color: '#ffd166', shadow: true,
+  });
+  y += 26;
+  const entries = (lb.entries || []).slice(0, 5);
+  if (entries.length === 0) {
+    render.drawText(i18n.t('leaderboard.empty'), w / 2, y, {
+      font: '14px sans-serif', align: 'center', color: 'rgba(255,255,255,0.7)',
+    });
+    y += 22;
+  } else {
+    ctx.save();
+    ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < entries.length; i++) {
+      ctx.fillStyle = i === 0 ? '#ffd166' : 'rgba(255,255,255,0.85)';
+      ctx.fillText(`${i + 1}. ${entries[i].name} — ${i18n.formatNumber(entries[i].score)}`, w / 2, y);
+      y += 20;
+    }
+    ctx.restore();
+  }
+  if (lb.rank != null) {
+    render.drawText(i18n.t('leaderboard.rank', { rank: lb.rank }), w / 2, y + 2, {
+      font: '13px sans-serif', align: 'center', color: 'rgba(255,255,255,0.6)',
+    });
+  }
 }
 
 async function shareDaily() {
-  const text = i18n.t('result.shareDailyText', {
-    date: i18n.formatDate(args.date),
+  const text = buildShareText({
+    dateLabel: i18n.formatDate(args.date),
     score: i18n.formatNumber(args.score),
+    movesUsed: args.movesUsed ?? null,
+    streak: args.streak || 0,
+    url: SITE_URL,
   });
-  try {
-    if (navigator.share) {
-      // Brand name stays English in the share sheet title.
-      await navigator.share({ title: 'Jeweled', text });
-    } else if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      await dialogs.alert(i18n.t('common.copiedToClipboard'));
-    }
-  } catch {}
+  const lines = [
+    i18n.formatDate(args.date),
+    i18n.t('result.scorePts', { score: i18n.formatNumber(args.score) }),
+  ];
+  if ((args.streak || 0) >= 2) lines.push(i18n.t('daily.streak', { n: args.streak }));
+  const outcome = await shareCard(
+    { title: 'Jeweled Daily', lines, footer: SITE_URL },
+    text,
+  );
+  if (outcome === 'copied') {
+    await dialogs.alert(i18n.t('common.copiedToClipboard'));
+  }
 }
 
 function drawHitButton(x, y, w, h, label, onClick) {

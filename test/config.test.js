@@ -71,7 +71,7 @@ describe('spawn + powerup tunables', () => {
   });
 
   it('defines emoji + ring metadata for every powerup slot', () => {
-    expect(POWERUP_SLOTS).toEqual(['shuffle', 'colorBlast', 'bombDrop', 'recolor']);
+    expect(POWERUP_SLOTS).toEqual(['shuffle', 'colorBlast', 'bombDrop', 'recolor', 'undo']);
     for (const slot of POWERUP_SLOTS) {
       expect(POWERUP_META[slot]).toMatchObject({
         emoji: expect.any(String),

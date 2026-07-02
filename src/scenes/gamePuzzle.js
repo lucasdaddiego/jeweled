@@ -10,9 +10,9 @@ import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
-import { createBoard } from '../grid.js';
+import { createBoard, newCell } from '../grid.js';
 import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
 import { setScene, clockMs } from '../main.js';
 import { SPECIAL } from '../config.js';
@@ -43,12 +43,25 @@ export function enter(args = {}) {
   // → redirect to puzzleSelect, instead of silently launching puzzle #1.
   puzzleNum = args.puzzle ?? null;
   puzzle = puzzleNum != null ? getPuzzle(puzzleNum) : null;
-  if (!puzzle) { setScene('puzzleSelect'); return; }
+  if (!puzzle) {
+    // Defer + replace: enter() runs inside setScene('gamePuzzle'), which will
+    // still push ITS history entry after we return. A synchronous redirect
+    // here would interleave the two pushes and leave an orphan gamePuzzle
+    // entry on top of the stack (first Back press appears to do nothing).
+    // The microtask runs before the next frame, and replace overwrites the
+    // bad entry.
+    queueMicrotask(() => setScene('puzzleSelect', {}, { replace: true }));
+    return;
+  }
 
   document.body.className = '';
   clearEffects();   // drop any still-alive FX from the previous run before first draw
   const rng = mulberry32(strHash(`puzzle:${puzzleNum}:v1`));
-  grid = createBoard(rng);
+  // Hand-laid boards ship as 8 digit-rows; otherwise seeded-random. Both are
+  // deterministic per puzzle id.
+  grid = puzzle.board
+    ? puzzle.board.map(row => [...row].map(ch => newCell(Number(ch))))
+    : createBoard(rng);
   cascade = new Cascade(grid, { mode: 'puzzle', rng });
   movesLeft = puzzle.moves;
   resultTriggered = false;
@@ -83,6 +96,7 @@ export function enter(args = {}) {
     progress.specialsCreated[special] = (progress.specialsCreated[special] || 0) + 1;
     achievements.notifySpecialSpawned(special);
   };
+  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
   cascade.onMoveCommitted = () => { movesLeft--; };
   cascade.onScoreChanged = (newScore, delta) => {
     progress.score = newScore;
@@ -170,12 +184,15 @@ export function draw() {
     render.layout.isNarrow ? i18n.t('common.backShort') : i18n.t('common.back'),
     () => setScene('puzzleSelect'), buttons, cursorX, cursorY);
 
+  drawHintButton(boardR - btnW - 48, hudY + 2, cascade, grid, (h) => { hint = h; }, buttons, cursorX, cursorY);
   render.drawBoard(grid, { shakeAmp: cascade.shakeAmp, settings, hint, idleMs: cascade.idleSinceMs });
 }
 
 export function onPointer(evt) {
-  hint = null;
+  // Clear the hint only on 'down' — the release ('up') of the tap that PRESSED
+  // the hint button would otherwise erase the hint it just granted.
   if (evt.type === 'down') {
+    hint = null;
     for (let i = buttons.length - 1; i >= 0; i--) {
       const b = buttons[i];
       if (evt.x >= b.x && evt.x <= b.x + b.w && evt.y >= b.y && evt.y <= b.y + b.h) {

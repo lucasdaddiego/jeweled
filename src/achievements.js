@@ -43,6 +43,12 @@ export const ACHIEVEMENTS = [
   // === Big scores ===
   { id: 'score_zen_10k',  nameKey: 'achievement.score_zen_10k.name',  descKey: 'achievement.score_zen_10k.desc',  icon: '🥄' },
   { id: 'score_zen_100k', nameKey: 'achievement.score_zen_100k.name', descKey: 'achievement.score_zen_100k.desc', icon: '💎' },
+
+  // === Habits & mastery ===
+  { id: 'streak_3',       nameKey: 'achievement.streak_3.name',       descKey: 'achievement.streak_3.desc',       icon: '🔥' },
+  { id: 'streak_7',       nameKey: 'achievement.streak_7.name',       descKey: 'achievement.streak_7.desc',       icon: '📆' },
+  { id: 'defuse_10',      nameKey: 'achievement.defuse_10.name',      descKey: 'achievement.defuse_10.desc',      icon: '✂️' },
+  { id: 'powerup_10',     nameKey: 'achievement.powerup_10.name',     descKey: 'achievement.powerup_10.desc',     icon: '🎒' },
 ];
 
 // In-memory toast queue. UI polls + drains.
@@ -129,6 +135,11 @@ function bumpCounter(key, delta) {
 
 export function notifyMatchCleared(cellCount, depth) {
   const total = bumpCounter('totalMatches', cellCount);
+  const state = getState();
+  if (depth > (state.counters.biggestCascade || 0)) {
+    state.counters.biggestCascade = depth;
+    storage.saveKey('achievements', state);
+  }
   unlock('first_match');
   if (total >= 100)    unlock('matches_100');
   if (total >= 1000)   unlock('matches_1000');
@@ -139,9 +150,42 @@ export function notifyMatchCleared(cellCount, depth) {
 }
 
 export function notifySpecialSpawned(special) {
+  bumpCounter('specialsCreated', 1);
   if (special === SPECIAL.COLOR_BOMB) unlock('special_color');
   if (special === SPECIAL.AREA_BOMB)  unlock('special_area');
   if (special === SPECIAL.STAR)       unlock('special_star');
+}
+
+// Daily streak length, reported by gameDaily after a counted submission.
+export function notifyDailyStreak(days) {
+  if (days >= 3) unlock('streak_3');
+  if (days >= 7) unlock('streak_7');
+}
+
+// Time-bomb defuses, reported by scenes via cascade.onBombsDefused.
+export function notifyBombsDefused(count) {
+  if (count <= 0) return;
+  const total = bumpCounter('bombsDefused', count);
+  if (total >= 10) unlock('defuse_10');
+}
+
+// A power-up charge was spent (any slot). Called from powerups.spendCharge.
+export function notifyPowerupUsed() {
+  const total = bumpCounter('powerupsUsed', 1);
+  if (total >= 10) unlock('powerup_10');
+}
+
+// Play-time tracking: accumulate in memory and fold into the persisted
+// counter in coarse chunks, so the per-frame call never touches storage.
+let _pendingPlayMs = 0;
+const PLAYTIME_FLUSH_MS = 15_000;
+export function addPlayTimeMs(ms) {
+  _pendingPlayMs += ms;
+  if (_pendingPlayMs >= PLAYTIME_FLUSH_MS) {
+    const chunk = _pendingPlayMs;
+    _pendingPlayMs = 0;
+    bumpCounter('timePlayedMs', chunk);
+  }
 }
 
 export function notifyLevelWin(level) {

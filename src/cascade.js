@@ -23,8 +23,11 @@ export const STATE = {
 export class Cascade {
   constructor(grid, opts = {}) {
     this.grid = grid;
-    this.mode = opts.mode || 'zen'; // 'zen' | 'classic' | 'daily'
+    this.mode = opts.mode || 'zen'; // 'zen' | 'classic' | 'daily' | 'blitz' | 'puzzle'
     this.rng = opts.rng || Math.random;
+    // Mode-specific spawn tweaks forwarded to grid.spawnNew (e.g. Blitz's
+    // TIME_PLUS clock gems: { timePlusRate: N }).
+    this.spawnOpts = opts.spawnOpts || null;
     this.state = STATE.IDLE;
 
     // Per-run state
@@ -43,6 +46,11 @@ export class Cascade {
     // Queue of specials to activate during ACTIVATING_SPECIALS
     this.activationQueue = [];
     this.activationQueueIndex = 0;
+    // Set when a player move commits; consumed at the move's first FALL step
+    // so bombs tick only after every queued activation had its chance to
+    // clear (= defuse) them. Ticking earlier (the old behavior) exploded a
+    // countdown-1 bomb that the player's color bomb was about to defuse.
+    this._bombTickPending = false;
 
     // Last swap origin (for swap-prefer-spawn-cell)
     this.lastSwapTo = null;
@@ -58,6 +66,7 @@ export class Cascade {
     this.onSpecialSpawned = null; // (special: SPECIAL.*) => void — once per match-promoted spawn
     this.onSpecialActivated = null; // ({r, c, special}) => void
     this.onBombExploded   = null; // (cell:{r,c}) => void  — Classic: deduct 5 moves
+    this.onBombsDefused   = null; // (count) => void — bombs cleared before detonating
     this.onMoveCommitted  = null; // ()=>void  — called once per valid swap (scenes track their own movesLeft)
     this.onIdleReached    = null; // ()=>void  — for save-state snapshot trigger
     this.onScoreChanged   = null; // (newScore, delta) => void
@@ -365,20 +374,11 @@ export class Cascade {
     // Valid move — commit it
     this.onMoveCommitted?.();
 
-    // Decrement bombs (player move). Exploded bombs are nulled out so they
-    // don't keep ticking into negative countdowns. Gravity will refill the
-    // empty cell on the next cascade fall step. The scene's onBombExploded
-    // callback handles the move penalty + particle burst for visual feedback.
-    //
-    // Pass `cleared` so bombs inside the winning match aren't decremented —
-    // they're about to earn the defuse bonus via _beginResolve, not explode.
-    const exploded = tickBombs(this.grid, cleared);
-    if (exploded.length > 0) {
-      for (const e of exploded) {
-        this.onBombExploded?.(e);
-        this.grid[e.r][e.c] = null;
-      }
-    }
+    // Bombs tick at this move's first FALL step (see _beginFall), not here:
+    // by then the match AND every queued special activation have cleared
+    // (defused) their cells, so a bomb the player's play legitimately
+    // reaches earns the defuse bonus instead of exploding under it.
+    this._bombTickPending = true;
 
     // If color-bomb was swapped, queue its activation. If the swap *also*
     // formed an incidental match (rare but possible — e.g. CB+striped that
@@ -389,7 +389,7 @@ export class Cascade {
     if (colorBombResult) {
       this.cascadeDepth = 1;
       const bombCell = this.grid[colorBombResult.bombCell.r][colorBombResult.bombCell.c];
-      this.activationQueue.push({
+      this._queueActivation({
         r: colorBombResult.bombCell.r,
         c: colorBombResult.bombCell.c,
         special: SPECIAL.COLOR_BOMB,
@@ -407,7 +407,7 @@ export class Cascade {
       const ps = colorBombResult.partnerSpecial;
       if (ps === SPECIAL.LINE_H || ps === SPECIAL.LINE_V || ps === SPECIAL.AREA_BOMB ||
           ps === SPECIAL.FIRE   || ps === SPECIAL.LIGHTNING || ps === SPECIAL.STAR) {
-        this.activationQueue.push({
+        this._queueActivation({
           r: colorBombResult.partnerCell.r,
           c: colorBombResult.partnerCell.c,
           special: ps,
@@ -453,24 +453,20 @@ export class Cascade {
       this.activationQueueIndex = 0;
     }
 
-    // Scan cleared cells for special effects:
-    // - TIME_BOMB → defuse bonus
-    // - GRAVITY  → flip gravity next fall
-    // - COIN     → multiply score for this wave
-    // - FIRE/LIGHTNING/STAR → queue chain activation
-    let defuseBonus = 0;
-    let coinMultiplier = 1;
+    // Scan cleared cells:
+    // - passive specials (TIME_BOMB defuse, GRAVITY flip, COIN multiplier)
+    //   via the shared helper — _afterActivations runs the same scan so a
+    //   coin/gravity gem swept by a line gem keeps its effect;
+    // - effect-bearing specials queue a chain activation. _queueActivation
+    //   dedupes by cell so a color bomb whose swap also formed a match
+    //   through the bomb cell doesn't fire twice (once with partnerType,
+    //   once from this scan without it — a full second board clear).
+    const { defuseBonus, coinMultiplier } = this._scanPassiveEffects(cleared);
+    if (defuseBonus > 0) this.onBombsDefused?.(defuseBonus / SCORE.BOMB_DEFUSE_BONUS);
     for (const key of cleared) {
       const [r, c] = key.split(',').map(Number);
       const cell = this.grid[r][c];
       if (!cell) continue;
-      if (cell.special === SPECIAL.TIME_BOMB) defuseBonus += SCORE.BOMB_DEFUSE_BONUS;
-      if (cell.special === SPECIAL.GRAVITY)   this.gravityFlipNext = true;
-      if (cell.special === SPECIAL.COIN)      coinMultiplier *= COIN_MULTIPLIER;
-      // Chain-activate any "effect" special that was incidentally cleared as
-      // part of a plain match — line gems, area bombs, fire, lightning, star,
-      // and even color bombs all fire their effect. Skip GRAVITY/TIME_BOMB/COIN/
-      // WILDCARD (those have non-clear effects handled above or are passive).
       if (cell.special === SPECIAL.FIRE ||
           cell.special === SPECIAL.LIGHTNING ||
           cell.special === SPECIAL.STAR ||
@@ -478,18 +474,21 @@ export class Cascade {
           cell.special === SPECIAL.LINE_V ||
           cell.special === SPECIAL.AREA_BOMB ||
           cell.special === SPECIAL.COLOR_BOMB) {
-        this.activationQueue.push({ r, c, special: cell.special, type: cell.type });
+        this._queueActivation({ r, c, special: cell.special, type: cell.type });
       }
     }
 
     // Spawn a STAR once when cascade hits trigger depth. Scan all cleared
     // cells (not just the first) so a collision with a matcher-promoted
-    // spawn at the first cell doesn't silently drop the STAR.
+    // spawn at the first cell doesn't silently drop the STAR. Cells with a
+    // queued activation are excluded too — placing the bonus there would
+    // let the old special's own clear destroy the new gem before it fires.
     if (this.cascadeDepth === STAR_CASCADE_TRIGGER) {
       const occupied = new Set(toSpawn.map(s => `${s.r},${s.c}`));
       for (const key of cleared) {
         if (occupied.has(key)) continue;
         const [sr, sc] = key.split(',').map(Number);
+        if (this._hasQueuedActivationAt(sr, sc)) continue;
         const cell = this.grid[sr][sc];
         toSpawn.push({ r: sr, c: sc, special: SPECIAL.STAR, type: cell?.type ?? 0 });
         break;
@@ -497,14 +496,15 @@ export class Cascade {
     }
 
     // Big-wave bonus: a single wave that clears many cells spawns an extra special.
-    // Iterate cleared cells (excluding ones already reserved by matcher promotion)
-    // and pick one that doesn't already have a toSpawn entry.
+    // Iterate cleared cells (excluding ones already reserved by matcher promotion
+    // or a queued activation) and pick one that doesn't already have a toSpawn entry.
     if (cleared.size >= BIG_WAVE_AREA_BOMB) {
       const promoteTo = cleared.size >= BIG_WAVE_COLOR_BOMB ? SPECIAL.COLOR_BOMB : SPECIAL.AREA_BOMB;
       const occupied = new Set(toSpawn.map(s => `${s.r},${s.c}`));
       for (const key of cleared) {
         if (occupied.has(key)) continue;
         const [br, bc] = key.split(',').map(Number);
+        if (this._hasQueuedActivationAt(br, bc)) continue;
         const cell = this.grid[br][bc];
         toSpawn.push({ r: br, c: bc, special: promoteTo, type: cell?.type ?? 0 });
         break;
@@ -625,16 +625,16 @@ export class Cascade {
         targets.push({ r: tr, c: tc });
       }
       this.onSpecialActivated?.({ r: a.r, c: a.c, special: a.special, targets });
-      // Queue further chains
-      for (const ch of chained) this.activationQueue.push(ch);
-      // Credit any TIME_BOMBs hit by the activation's clear set. Bombs that
-      // were in the *original* match are already credited by _beginResolve and
-      // nulled by _afterResolve, so we only ever see bombs caught by a chain
-      // activation here.
-      const defuseBonus = this._creditBombDefuses(cleared);
+      // Queue further chains (deduped — a cell may already be queued)
+      for (const ch of chained) this._queueActivation(ch);
+      // Passive specials caught by this activation keep their effects:
+      // TIME_BOMB defuse credit, GRAVITY flip, COIN multiplier — the same
+      // scan _beginResolve runs for the original match.
+      const { defuseBonus, coinMultiplier } = this._scanPassiveEffects(cleared);
+      if (defuseBonus > 0) this.onBombsDefused?.(defuseBonus / SCORE.BOMB_DEFUSE_BONUS);
       // Score the activation
       this.cascadeDepth = Math.max(this.cascadeDepth, 1);
-      const gainedScore = scoreForClear(cleared.size, this.cascadeDepth) + defuseBonus;
+      const gainedScore = scoreForClear(cleared.size, this.cascadeDepth) * coinMultiplier + defuseBonus;
       this.score += gainedScore;
       // Animate clear
       this.clearingCells = new Set(cleared);
@@ -672,6 +672,18 @@ export class Cascade {
   }
 
   _beginFall() {
+    // Bombs tick once per committed move, here — after the match and every
+    // queued activation have cleared (and thereby defused) their cells.
+    // Explosions null the cell right before gravity, so the hole fills in
+    // the same fall step.
+    if (this._bombTickPending) {
+      this._bombTickPending = false;
+      const exploded = tickBombs(this.grid);
+      for (const e of exploded) {
+        this.onBombExploded?.(e);
+        this.grid[e.r][e.c] = null;
+      }
+    }
     this.gravityDir = this.gravityFlipNext ? 'up' : 'down';
     this.gravityFlipNext = false;
     const moves = applyGravity(this.grid, this.gravityDir);
@@ -688,7 +700,7 @@ export class Cascade {
   _afterFall() { this._beginSpawn(); }
 
   _beginSpawn() {
-    const spawns = spawnNew(this.grid, this.rng, this.gravityDir);
+    const spawns = spawnNew(this.grid, this.rng, this.gravityDir, this.spawnOpts);
     if (spawns.length === 0) {
       this._afterSpawn();
       return;
@@ -716,20 +728,41 @@ export class Cascade {
   }
 
 
-  // Sum BOMB_DEFUSE_BONUS for every TIME_BOMB still alive in the grid at the
-  // given cleared positions. _beginResolve folds this into its bigger
-  // multi-effect scan; _afterActivations calls this directly so that bombs
-  // caught by chain activations also credit the player.
-  _creditBombDefuses(cleared) {
-    let bonus = 0;
+  // Passive-special scan over a cleared set, shared by _beginResolve and
+  // _afterActivations: TIME_BOMB → defuse credit, GRAVITY → flip the next
+  // fall, COIN → score multiplier for the wave. Only LIVE cells count (an
+  // already-nulled cell has no special left to honor).
+  _scanPassiveEffects(cleared) {
+    let defuseBonus = 0;
+    let coinMultiplier = 1;
     for (const key of cleared) {
       const [r, c] = key.split(',').map(Number);
       const cell = this.grid[r]?.[c];
-      if (cell && cell.special === SPECIAL.TIME_BOMB) {
-        bonus += SCORE.BOMB_DEFUSE_BONUS;
-      }
+      if (!cell) continue;
+      if (cell.special === SPECIAL.TIME_BOMB) defuseBonus += SCORE.BOMB_DEFUSE_BONUS;
+      if (cell.special === SPECIAL.GRAVITY)   this.gravityFlipNext = true;
+      if (cell.special === SPECIAL.COIN)      coinMultiplier *= COIN_MULTIPLIER;
     }
-    return bonus;
+    return { defuseBonus, coinMultiplier };
+  }
+
+  // Queue a special activation unless an unprocessed entry already targets
+  // the same cell. Without the dedupe, a color bomb (or swap partner) that
+  // is queued explicitly by _afterSwap AND found again by _beginResolve's
+  // cleared-set scan fires twice — the duplicate CB entry has no partnerType
+  // and falls back to clearing its own color across the whole board.
+  _queueActivation(entry) {
+    if (this._hasQueuedActivationAt(entry.r, entry.c)) return false;
+    this.activationQueue.push(entry);
+    return true;
+  }
+
+  _hasQueuedActivationAt(r, c) {
+    for (let i = this.activationQueueIndex; i < this.activationQueue.length; i++) {
+      const q = this.activationQueue[i];
+      if (q.r === r && q.c === c) return true;
+    }
+    return false;
   }
 
   // Scene-entrance animation: every cell drops in from above into its final

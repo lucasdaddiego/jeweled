@@ -10,8 +10,10 @@ import * as storage from '../src/storage.js';
 import * as debugHud from '../src/debugHud.js';
 import * as overlay from '../src/scenes/powerupOverlay.js';
 import * as drag from '../src/dragInput.js';
+import * as painting from '../src/painting.js';
 import { setScene } from '../src/main.js';
 import { makeEmptyGrid, newCell, serializeGrid } from '../src/grid.js';
+import { mulberry32 } from '../src/rng.js';
 import { STATE } from '../src/cascade.js';
 import { SPECIAL } from '../src/config.js';
 import * as zen from '../src/scenes/gameZen.js';
@@ -243,14 +245,30 @@ describe('End button + finalizeRun', () => {
     expect(storage.load().zen.saveState).toBeNull();
   });
 
-  it('finalizeRun does not lower an existing better best score', () => {
+  it('exit PARKS the run — snapshot kept, nothing finalized (End is the only finalizer)', () => {
     storage.saveKey('zen', { bestScore: 999999 });
     zen.enter({});
     const c = debugHud.activeCascade(); runToIdle(zen, c);
     c.score = 500;
-    zen.exit();                                    // exit finalizes (score>0, runEndedScore null)
+    zen.exit();                                    // back out mid-run: park, don't end
+    expect(storage.load().zen.bestScore).toBe(999999);   // untouched
+    expect(storage.load().zen.totalRunsPlayed).toBe(0);  // not counted as a run
+    const ss = storage.load().zen.saveState;
+    expect(ss).toBeTruthy();                       // resumable via Continue
+    expect(ss.score).toBe(500);
+  });
+
+  it('finalizeRun (via End) does not lower an existing better best score', () => {
+    storage.saveKey('zen', { bestScore: 999999 });
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.score = 500;
+    const spy = vi.spyOn(render, 'drawHitButton');
+    zen.draw();
+    spy.mock.calls[0][5]();                        // End onClick
     expect(storage.load().zen.bestScore).toBe(999999);
     expect(storage.load().zen.totalRunsPlayed).toBe(1);
+    expect(storage.load().zen.saveState).toBeNull();
   });
 
   it('exit finalizes once; a prior End click prevents a double count', () => {
@@ -335,8 +353,8 @@ describe('onPointer: power-up overlay routing', () => {
     expect(overlay.isModalOpen()).toBe(true);
     const slotSpy = vi.spyOn(render, 'drawPowerupSlot');
     zen.draw();
-    // panel draws 4 slots, then the milestone popup draws 4 more; first popup slot = index 4.
-    const m0 = slotSpy.mock.calls[4];              // [x,y,w,h,...] for milestone slot 'shuffle'
+    // panel draws 5 slots, then the milestone popup draws 5 more; first popup slot = index 5.
+    const m0 = slotSpy.mock.calls[5];              // [x,y,w,h,...] for milestone slot 'shuffle'
     zen.onPointer({ type: 'down', x: m0[0] + m0[2] / 2, y: m0[1] + m0[3] / 2 });
     expect(storage.load().powerups.charges.shuffle).toBe(1);
     expect(overlay.isModalOpen()).toBe(false);
@@ -450,5 +468,147 @@ describe('exit() before enter()', () => {
     const f = await freshZen();
     expect(() => f.scene.exit()).not.toThrow();
     expect(f.storage.load().zen.totalRunsPlayed).toBe(0); // no finalize
+  });
+});
+
+describe('undo power-up', () => {
+  it('rewinds grid/score to the pre-move idle and spends the charge; a second undo is refused', () => {
+    // Seed the cascade rng: a runaway cascade crossing 1500 would open the
+    // milestone popup and swallow the undo-slot tap.
+    const rnd = mulberry32(0xC0FFEE);
+    vi.spyOn(Math, 'random').mockImplementation(() => rnd());
+    storage.saveKey('powerups', { charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 2 } });
+    zen.enter({ restoreFrom: { grid: plantedSerial(), score: 0, milestoneFloor: 0 } });
+    const c = debugHud.activeCascade();
+    const before = JSON.stringify(serializeGrid(c.grid));
+    zen.draw();
+    dragSwap(zen, { r: 0, c: 2 }, { r: 1, c: 2 });     // committed move
+    runToIdle(zen, c);
+    expect(c.score).toBeGreaterThanOrEqual(30);
+    expect(JSON.stringify(serializeGrid(c.grid))).not.toBe(before);
+    const slotSpy = vi.spyOn(render, 'drawPowerupSlot');
+    zen.draw();
+    const u = slotSpy.mock.calls[4];                    // 5th panel slot = undo
+    const at = { x: u[0] + u[2] / 2, y: u[1] + u[3] / 2 };
+    zen.onPointer({ type: 'down', x: at.x, y: at.y });  // undo slot tap
+    expect(c.score).toBe(0);
+    expect(c.scoreShown).toBe(0);
+    expect(JSON.stringify(serializeGrid(c.grid))).toBe(before); // board rewound
+    expect(storage.load().powerups.charges.undo).toBe(1);       // one charge spent
+    expect(storage.load().zen.saveState.score).toBe(0);         // rewound board snapshotted
+    zen.onPointer({ type: 'down', x: at.x, y: at.y });  // second undo, no new move since
+    expect(storage.load().powerups.charges.undo).toBe(1);       // refused: charge intact
+    expect(c.score).toBe(0);
+  });
+
+  it('undo is refused while the cascade is mid-animation (no committed move burned)', () => {
+    const setUndo = vi.spyOn(overlay, 'setUndoHandler');
+    zen.enter({ restoreFrom: { grid: plantedSerial(), score: 0, milestoneFloor: 0 } });
+    const undoFn = setUndo.mock.calls[0][0];
+    const c = debugHud.activeCascade();
+    c.onMoveCommitted();                                // prevIdle now exists
+    c.state = STATE.FALLING;
+    expect(undoFn()).toBe(false);                       // not idle -> refused
+    c.state = STATE.IDLE;
+    expect(undoFn()).toBe(true);                        // same rewind succeeds once idle
+  });
+});
+
+describe('pendingMilestones snapshot roundtrip', () => {
+  it('exit persists an earned-but-unallocated milestone; restore re-opens the picker', () => {
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.onScoreChanged(1500, 1500);                       // earn a milestone, don't allocate it
+    expect(overlay.isModalOpen()).toBe(true);
+    zen.exit();                                         // park mid-popup
+    const ss = storage.load().zen.saveState;
+    expect(ss.pendingMilestones).toBe(1);
+    zen.enter({ restoreFrom: ss });
+    expect(overlay.isModalOpen()).toBe(true);           // picker re-opened on restore
+  });
+});
+
+describe('gallery capture (End with painting enabled)', () => {
+  // End the run with painting on, declining the download dialog; the gallery
+  // capture fires unconditionally before the confirm.
+  async function endRunWithPainting() {
+    storage.saveKey('settings', { paintingMode: true });
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.score = 120;
+    const spy = vi.spyOn(render, 'drawHitButton');
+    zen.draw();
+    spy.mock.calls[0][5]();                             // End -> finalizeRun + offerSavePainting
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); // decline the download
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  }
+
+  it('a resolved thumbnail lands in zen.gallery (newest first) and End still navigates', async () => {
+    vi.spyOn(painting, 'thumbnailDataURL').mockResolvedValue('data:image/jpeg;base64,x');
+    // Emulate a pre-gallery save blob: the capture must tolerate a missing list.
+    storage.saveKey('zen', { gallery: null });
+    await endRunWithPainting();
+    const gallery = storage.load().zen.gallery;
+    expect(gallery).toHaveLength(1);
+    expect(gallery[0].dataUrl).toBe('data:image/jpeg;base64,x');
+    expect(gallery[0].at).toBeTruthy();
+    expect(setScene).toHaveBeenCalledWith('title');
+  });
+
+  it('a null thumbnail (nothing painted / encode failed) leaves the gallery untouched', async () => {
+    vi.spyOn(painting, 'thumbnailDataURL').mockResolvedValue(null);
+    await endRunWithPainting();
+    expect(storage.load().zen.gallery).toEqual([]);
+  });
+
+  it('a rejected capture is swallowed — keepsake only, End flow unaffected', async () => {
+    vi.spyOn(painting, 'thumbnailDataURL').mockRejectedValue(new Error('boom'));
+    await endRunWithPainting();
+    expect(storage.load().zen.gallery).toEqual([]);
+    expect(setScene).toHaveBeenCalledWith('title');
+  });
+});
+
+describe('post-End guards', () => {
+  it('a double-tap on End finalizes only once', () => {
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.score = 300;
+    const spy = vi.spyOn(render, 'drawHitButton');
+    zen.draw();
+    spy.mock.calls[0][5]();                        // End
+    spy.mock.calls[0][5]();                        // same-frame second tap -> guarded
+    expect(storage.load().zen.totalRunsPlayed).toBe(1);
+  });
+
+  it('a late idle after End cannot resurrect the save state', () => {
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.score = 250;
+    const spy = vi.spyOn(render, 'drawHitButton');
+    zen.draw();
+    spy.mock.calls[0][5]();                        // End -> finalizeRun nulls saveState
+    expect(storage.load().zen.saveState).toBeNull();
+    c.onIdleReached();                             // e.g. a cascade settling under the dialog
+    expect(storage.load().zen.saveState).toBeNull(); // runEndedScore guard held
+  });
+});
+
+describe('bomb defusal + hint button', () => {
+  it('onBombsDefused feeds the achievement counter', () => {
+    zen.enter({});
+    debugHud.activeCascade().onBombsDefused(3);
+    expect(storage.load().achievements.counters.bombsDefused).toBe(3);
+  });
+
+  it('clicking the hint button feeds a hint into the next draw', () => {
+    zen.enter({ restoreFrom: { grid: plantedSerial(), score: 0, milestoneFloor: 0 } });
+    const btn = vi.spyOn(render, 'drawHitButton');
+    zen.draw();
+    const hintBtn = btn.mock.calls.find(call => call[4] === '💡');
+    hintBtn[5]();                                  // ready + idle -> findModestHint
+    const board = vi.spyOn(render, 'drawBoard');
+    zen.draw();
+    expect(board.mock.calls[0][1].hint).toBeTruthy();
   });
 });

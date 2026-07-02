@@ -28,14 +28,14 @@ const h = vi.hoisted(() => {
   return {
     scenes, ctxStub,
     render: {
-      setupCanvas: vi.fn(), buildAtlas: vi.fn(),
+      setupCanvas: vi.fn(), buildAtlas: vi.fn(), setGemStyle: vi.fn(),
       ctxRef: vi.fn(() => ctxStub),
       getViewport: vi.fn(() => ({ w: 800, h: 600 })),
     },
     input: { setup: vi.fn(), on: vi.fn(), isPointerDown: vi.fn(() => false) },
-    storage: { load: vi.fn(), flush: vi.fn() },
+    storage: { load: vi.fn(), flush: vi.fn(), getSettings: vi.fn(() => ({ sound: true, gemStyle: 'color' })) },
     toasts: { update: vi.fn(), draw: vi.fn() },
-    i18n: { init: vi.fn(), setLanguage: vi.fn(), getLocale: vi.fn(() => 'en') },
+    i18n: { init: vi.fn(), setLanguage: vi.fn(), getLocale: vi.fn(() => 'en'), t: vi.fn((k) => k) },
     dialogs: {
       draw: vi.fn(), isOpen: vi.fn(() => false), handlePointer: vi.fn(() => false),
       onMove: vi.fn(), consumeBack: vi.fn(() => false),
@@ -73,6 +73,10 @@ function inputCbs() { return h.input.on.mock.calls.at(-1)[0]; }
 async function boot() {
   vi.resetModules();
   installCanvas();
+  // jsdom's location persists across tests in a file; a #hash left behind by
+  // an earlier test's pushState would otherwise be picked up by main's
+  // hash-boot routing and land the app on a non-title scene.
+  history.replaceState(null, '', '/');
   return import('../src/main.js');
 }
 
@@ -146,6 +150,97 @@ describe('init (auto-runs on import; jsdom readyState=complete, hostname=localho
     vi.stubGlobal('location', { hostname: 'jeweled.example', search: '?debug=1', hash: '#title', reload: vi.fn() });
     await boot();
     expect(h.debugHud.setEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it('boots straight into a directly-enterable scene named by the URL hash', async () => {
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#gameBlitz', reload: vi.fn() });
+    await boot();
+    expect(h.scenes.gameBlitz.enter).toHaveBeenCalled();     // PWA shortcut boot
+    expect(h.scenes.title.enter).not.toHaveBeenCalled();
+  });
+
+  it('falls back to title for a hash that is not a boot scene', async () => {
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#result', reload: vi.fn() });
+    await boot();                                            // 'result' not directly enterable
+    expect(h.scenes.title.enter).toHaveBeenCalled();
+    expect(h.scenes.result.enter).not.toHaveBeenCalled();
+  });
+});
+
+describe('announce (aria-live region)', () => {
+  // installCanvas() doesn't create #sr-live (index.html does in production).
+  function addLiveRegion() {
+    const el = document.createElement('div');
+    el.id = 'sr-live';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it('clears-then-writes the region so repeats re-announce', async () => {
+    const main = await boot();
+    const live = addLiveRegion();
+    main.announce('Daily challenge started');
+    expect(live.textContent).toBe('Daily challenge started');
+    main.announce('Daily challenge started');                // same text again → still set
+    expect(live.textContent).toBe('Daily challenge started');
+  });
+
+  it('announces scene changes with the sr.scene.* key', async () => {
+    const main = await boot();
+    const live = addLiveRegion();
+    main.setScene('stats');                                  // i18n.t mock echoes the key
+    expect(live.textContent).toBe('sr.scene.stats');
+  });
+
+  it('is a no-op for empty text or a missing region', async () => {
+    const main = await boot();
+    expect(() => main.announce('lost')).not.toThrow();       // no #sr-live in DOM
+    const live = addLiveRegion();
+    live.textContent = 'kept';
+    main.announce('');                                       // falsy text → untouched
+    expect(live.textContent).toBe('kept');
+  });
+});
+
+describe('boot() failure path', () => {
+  it('swaps the splash spinner for the unsupported-browser notice when init throws', async () => {
+    h.render.setupCanvas.mockImplementationOnce(() => { throw new Error('no OffscreenCanvas'); });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.resetModules();
+    installCanvas();
+    const dots = document.createElement('div');
+    dots.className = 'boot-dots';
+    document.getElementById('boot-splash').appendChild(dots);
+    history.replaceState(null, '', '/');
+    await expect(import('../src/main.js')).resolves.toBeTruthy();   // no crash
+    expect(error).toHaveBeenCalledWith('boot failed:', expect.any(Error));
+    const msg = document.querySelector('#boot-splash .boot-error');
+    expect(msg).toBeTruthy();
+    expect(msg.textContent).toContain('too old');
+    expect(document.querySelector('#boot-splash .boot-dots')).toBeNull(); // spinner removed
+    expect(h.scenes.title.enter).not.toHaveBeenCalled();             // init never finished
+  });
+
+  it('appends the notice even when the splash has no spinner to remove', async () => {
+    h.render.setupCanvas.mockImplementationOnce(() => { throw new Error('boom'); });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.resetModules();
+    installCanvas();                       // splash ships .boot-gem, no .boot-dots
+    history.replaceState(null, '', '/');
+    await import('../src/main.js');
+    expect(document.querySelector('#boot-splash .boot-error')).toBeTruthy();
+  });
+
+  it('stays silent when even the boot splash is missing', async () => {
+    h.render.setupCanvas.mockImplementationOnce(() => { throw new Error('boom'); });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.resetModules();
+    installCanvas();
+    document.getElementById('boot-splash').remove();
+    history.replaceState(null, '', '/');
+    await expect(import('../src/main.js')).resolves.toBeTruthy();
+    expect(error).toHaveBeenCalledWith('boot failed:', expect.any(Error));
+    expect(document.querySelector('.boot-error')).toBeNull();
   });
 });
 
@@ -248,6 +343,12 @@ describe('popstate navigation', () => {
     expect(replace).toHaveBeenCalledWith({ scene: 'title', args: {} }, '', '#title');
   });
 
+  it('defaults missing popstate args to {}', async () => {
+    await boot();
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { scene: 'stats' } }));
+    expect(h.scenes.stats.enter).toHaveBeenCalledWith({});   // s.args || {}
+  });
+
   it('handles a known scene then a stateless popstate on the same instance', async () => {
     // Both the then- and else-arms of `if (scene && SCENES[scene])` on one
     // module instance, so v8 records both (it doesn't aggregate the else-arm
@@ -259,12 +360,15 @@ describe('popstate navigation', () => {
     expect(h.scenes.title.enter).toHaveBeenCalled();    // else-arm (title fallback)
   });
 
-  it('treats Back as "close dialog" and re-pushes the popped state', async () => {
+  it('treats Back as "close dialog" and re-pushes the CURRENT scene (not the popped one)', async () => {
     await boot();
     h.dialogs.consumeBack.mockReturnValue(true);
     const push = vi.spyOn(history, 'pushState');
+    // The pop landed on the 'stats' entry, but the visible scene is still
+    // title — the re-push must describe what's on screen so a later Back
+    // doesn't land somewhere unexpected.
     window.dispatchEvent(new PopStateEvent('popstate', { state: { scene: 'stats' } }));
-    expect(push).toHaveBeenCalledWith({ scene: 'stats' }, '', expect.any(String));
+    expect(push).toHaveBeenCalledWith({ scene: 'title', args: {} }, '', '#title');
   });
 
   it('consumes Back with no state without re-pushing', async () => {

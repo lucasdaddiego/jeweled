@@ -4,6 +4,7 @@ import * as render from '../render.js';
 import * as storage from '../storage.js';
 import * as i18n from '../i18n.js';
 import { ACHIEVEMENTS, summary } from '../achievements.js';
+import { levelCount } from '../levels.js';
 import { setScene } from '../main.js';
 
 let buttons = [];
@@ -39,11 +40,11 @@ export function draw() {
     font: '14px sans-serif', align: 'center', color: 'rgba(255,255,255,0.6)',
   });
 
-  // Stats summary card
+  // Stats summary card (5 rows × 2 columns)
   const cardY = titleY + 64;
   const cardW = Math.min(560, w - 40);
   const cardX = (w - cardW) / 2;
-  const cardH = 110;
+  const cardH = 166;
   const ctx = render.ctxRef();
   render.roundRect(ctx, cardX, cardY, cardW, cardH, 12);
   ctx.fillStyle = 'rgba(40,30,80,0.55)'; ctx.fill();
@@ -100,13 +101,18 @@ export function draw() {
 function drawStats(x, y, w) {
   const state = storage.load();
   const counters = (state.achievements?.counters) || {};
+  const playedMs = counters.timePlayedMs || 0;
   const lines = [
     { label: i18n.t('stats.totalGemsCleared'),       value: i18n.formatNumber(counters.totalMatches || 0) },
     { label: i18n.t('stats.zenBestScore'),           value: i18n.formatNumber(state.zen?.bestScore || 0) },
     { label: i18n.t('stats.zenRunsPlayed'),          value: i18n.formatNumber(state.zen?.totalRunsPlayed || 0) },
-    { label: i18n.t('stats.classicLevelsBeaten'),    value: i18n.t('stats.classicLevelsBeatenValue', { n: Object.keys(state.classic?.levels || {}).length }) },
+    { label: i18n.t('stats.classicLevelsBeaten'),    value: i18n.t('stats.classicLevelsBeatenValue', { n: Object.keys(state.classic?.levels || {}).length, total: levelCount() }) },
     { label: i18n.t('stats.dailyChallengesCompleted'), value: i18n.formatNumber(state.daily?.totalDaysPlayed || 0) },
     { label: i18n.t('stats.blitzBestScore'),         value: i18n.formatNumber(state.blitz?.bestScore || 0) },
+    { label: i18n.t('stats.biggestCascade'),         value: `x${counters.biggestCascade || 0}` },
+    { label: i18n.t('stats.specialsCreated'),        value: i18n.formatNumber(counters.specialsCreated || 0) },
+    { label: i18n.t('stats.bombsDefused'),           value: i18n.formatNumber(counters.bombsDefused || 0) },
+    { label: i18n.t('stats.timePlayed'),             value: i18n.t('stats.timeValue', { h: Math.floor(playedMs / 3_600_000), m: Math.floor((playedMs % 3_600_000) / 60_000) }) },
   ];
   const colW = w / 2;
   for (let i = 0; i < lines.length; i++) {

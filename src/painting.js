@@ -57,6 +57,30 @@ export async function toBlob() {
   return await canvas.convertToBlob({ type: 'image/png' });
 }
 
+// Downscaled JPEG data-URL of the current painting, for the gallery. ~15-25KB
+// at 256px — small enough to keep a dozen in localStorage. Returns null when
+// there's no painting or any step fails (gallery capture is best-effort).
+export async function thumbnailDataURL(size = 256) {
+  if (!canvas) return null;
+  try {
+    const thumb = new OffscreenCanvas(size, size);
+    const tctx = thumb.getContext('2d');
+    // Dark backing so the translucent strokes read like they do in-game.
+    tctx.fillStyle = '#0e0a1f';
+    tctx.fillRect(0, 0, size, size);
+    tctx.drawImage(canvas, 0, 0, size, size);
+    const blob = await thumb.convertToBlob({ type: 'image/jpeg', quality: 0.7 });
+    return await new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 function hexToRgba(hex, a) {
   // Accept #rgb or #rrggbb
   if (hex.startsWith('#')) hex = hex.slice(1);

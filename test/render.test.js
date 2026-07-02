@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { installCanvas, setViewport, makeStubCtx, flushRAF, pendingRAFCount } from './helpers.js';
+import { installCanvas, setViewport, makeStubCtx, flushRAF, pendingRAFCount, StubOffscreenCanvas } from './helpers.js';
 
 // Break the render.js -> main.js import cycle (main.init() would boot the game
 // under jsdom). clockMs is a controllable mock so wobble/pulse math is testable.
@@ -7,7 +7,7 @@ vi.mock('../src/main.js', () => ({ clockMs: vi.fn(() => 0), setScene: vi.fn() })
 
 import * as render from '../src/render.js';
 import { clockMs } from '../src/main.js';
-import { SPECIAL, GRID, DEFAULT_EMOJI } from '../src/config.js';
+import { SPECIAL, GRID, DEFAULT_EMOJI, SHAPES_EMOJI } from '../src/config.js';
 import { newCell, makeEmptyGrid } from '../src/grid.js';
 import * as debugHud from '../src/debugHud.js';
 import * as painting from '../src/painting.js';
@@ -50,6 +50,7 @@ function buildFullBoard() {
   g[2][3] = newCell(4); g[2][3].flashAlpha = 0.5;                        // no squash + flash>0
   g[2][4] = newCell(5); g[2][4].flashAlpha = 0;                          // no squash + flash<=0
   g[2][5] = newCell(6); g[2][5].renderRow = 4; g[2][5].renderCol = 6;    // render offsets
+  g[2][6] = newCell(0, SPECIAL.TIME_PLUS);                               // ⏱ badge (Blitz-only gem)
 
   return g;
 }
@@ -403,6 +404,39 @@ describe('drawBoard + specials + effects', () => {
     painting.setEnabled(false);
   });
 
+  it('clips the gem layer to the board frame', () => {
+    render.drawBoard(plainBoard(), {});
+    const calls = mainCalls();
+    expect(names(calls)).toContain('clip');
+    // The clip path is the board rect grown by the 8px frame pad.
+    const rect = calls.find(c => c[0] === 'rect');
+    const { boardX, boardY, boardSize } = render.layout;
+    expect(rect[1]).toEqual([boardX - 8, boardY - 8, boardSize + 16, boardSize + 16]);
+  });
+
+  it('iceMap draws a frost overlay (round rect + strokes + crack) per iced cell', () => {
+    const g = plainBoard();
+    const iceMap = Array.from({ length: GRID }, () => Array(GRID).fill(0));
+    render.drawBoard(g, { iceMap });                 // all zeros → no frost drawn
+    const q0 = countOf(mainCalls(), 'quadraticCurveTo');
+    const s0 = countOf(mainCalls(), 'stroke');
+    expect(q0).toBe(0);                              // plain gems never round-rect
+
+    iceMap[2][3] = 1;
+    iceMap[5][5] = 2;                                // layer count > 1 still one overlay
+    render.drawBoard(g, { iceMap });
+    const calls = mainCalls();
+    // 2 iced cells × one roundRect frost pane (4 corner curves each).
+    expect(countOf(calls, 'quadraticCurveTo') - q0).toBe(8);
+    // Each pane strokes twice: frost border + crack marks.
+    expect(countOf(calls, 'stroke') - s0).toBe(4);
+    // Crack polyline starts at (x + cs*0.3, y + cs*0.25) of the iced cell.
+    const cs = render.layout.cellSize;
+    const x = render.layout.boardX + 3 * cs, y = render.layout.boardY + 2 * cs;
+    expect(calls.some(c => c[0] === 'moveTo'
+      && c[1][0] === x + cs * 0.3 && c[1][1] === y + cs * 0.25)).toBe(true);
+  });
+
   it('drawBoardBg blits the cached background layer', () => {
     render.clearFrame();
     render.drawBoardBg();
@@ -413,6 +447,63 @@ describe('drawBoard + specials + effects', () => {
     // beforeEach already built once; building again while loads are pending
     // exercises loadFluent's in-flight short-circuit without throwing.
     expect(() => { render.buildAtlas(); render.buildAtlas(); }).not.toThrow();
+  });
+});
+
+describe('setGemStyle', () => {
+  it('rebuilds the atlas with SHAPES_EMOJI, is idempotent, and swaps back', () => {
+    // Count atlas rebuilds by recording every OffscreenCanvas construction.
+    const made = [];
+    class CountingOC extends StubOffscreenCanvas {
+      constructor(w, h) { super(w, h); made.push(this); }
+    }
+    vi.stubGlobal('OffscreenCanvas', CountingOC);
+
+    render.setGemStyle('shapes');            // color → shapes: one rebuild
+    expect(made).toHaveLength(1);
+    const shapeCtx = made[0].getContext('2d');
+    // The atlas is seeded with the OS-emoji fallback glyphs of the ACTIVE set
+    // (Fluent SVGs never resolve under jsdom), one slot per gem type — except
+    // the 🌙 token, which is vector-painted (backing disc + carved crescent)
+    // instead of relying on the dark, off-center OS glyph.
+    for (const emoji of SHAPES_EMOJI) {
+      if (emoji === '🌙') continue;
+      expect(shapeCtx.__calls.some(c => c[0] === 'fillText' && c[1][0] === emoji)).toBe(true);
+    }
+    expect(shapeCtx.__calls.some(c => c[0] === 'fillText' && c[1][0] === '🌙')).toBe(false);
+    const slotPx = made[0].height;
+    const moonSlot = SHAPES_EMOJI.indexOf('🌙');
+    const moonCx = moonSlot * slotPx + slotPx / 2;
+    // Backing disc + moon disc arcs centered in the slot, plus the offset
+    // carve arc — three arcs total for the token.
+    const tokenArcs = shapeCtx.__calls.filter(c => c[0] === 'arc'
+      && c[1][0] >= moonSlot * slotPx && c[1][0] < (moonSlot + 1) * slotPx);
+    expect(tokenArcs.length).toBe(3);
+    expect(tokenArcs.some(c => Math.abs(c[1][0] - moonCx) < 0.5 && Math.abs(c[1][1] - slotPx / 2) < 0.5)).toBe(true);
+    expect(made[0].width).toBe(made[0].height * SHAPES_EMOJI.length);
+
+    render.setGemStyle('shapes');            // same style → no rebuild
+    expect(made).toHaveLength(1);
+
+    render.setGemStyle('color');             // back to the default set: rebuild
+    expect(made).toHaveLength(2);
+    const colorCtx = made[1].getContext('2d');
+    expect(colorCtx.__calls.some(c => c[0] === 'fillText' && c[1][0] === DEFAULT_EMOJI[0])).toBe(true);
+    expect(colorCtx.__calls.some(c => c[0] === 'fillText' && c[1][0] === SHAPES_EMOJI[2])).toBe(false);
+
+    render.setGemStyle('color');             // idempotent in the default direction too
+    expect(made).toHaveLength(2);
+  });
+
+  it('any non-"shapes" value maps to the default glyph set (no rebuild churn)', () => {
+    const made = [];
+    class CountingOC extends StubOffscreenCanvas {
+      constructor(w, h) { super(w, h); made.push(this); }
+    }
+    vi.stubGlobal('OffscreenCanvas', CountingOC);
+    render.setGemStyle(undefined);           // settings default / missing value
+    render.setGemStyle('color');
+    expect(made).toHaveLength(0);            // already on DEFAULT_EMOJI → no-ops
   });
 });
 

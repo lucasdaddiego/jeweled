@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// sceneCommon.js is import-clean (particles/floaters/waves/bolts + cascade STATE
-// + config TIMING + grid.findModestHint). No render/main, so no module mocks.
-import { tickEffects, clearEffects, tickHint } from '../src/scenes/sceneCommon.js';
+// sceneCommon.js pulls in render + main for drawHintButton. Mock main (hoisted)
+// so importing the module never boots the game under jsdom, and so the hint
+// cooldown clock is controllable per test.
+vi.mock('../src/main.js', () => ({ clockMs: vi.fn(() => 0), setScene: vi.fn() }));
+
+import { tickEffects, clearEffects, tickHint, drawHintButton } from '../src/scenes/sceneCommon.js';
+import { clockMs } from '../src/main.js';
+import * as render from '../src/render.js';
+import * as achievements from '../src/achievements.js';
 import * as particles from '../src/particles.js';
 import * as floaters from '../src/floaters.js';
 import * as waves from '../src/waves.js';
@@ -52,6 +58,14 @@ describe('tickEffects', () => {
     tickEffects(50);                          // well under any pool lifetime
     expect(fxOps()).toBeGreaterThan(0);
   });
+
+  it('feeds every frame dt into the play-time counter', () => {
+    const spy = vi.spyOn(achievements, 'addPlayTimeMs');
+    tickEffects(16);
+    expect(spy).toHaveBeenCalledWith(16);
+    tickEffects(7);
+    expect(spy).toHaveBeenLastCalledWith(7);
+  });
 });
 
 describe('clearEffects', () => {
@@ -93,5 +107,58 @@ describe('tickHint', () => {
     expect(tickHint({ state: STATE.IDLE, idleSinceMs: TIMING.HINT_AFTER - 1 }, grid, existing)).toBe(existing);
     // Exactly at the threshold is still "not yet" (strict >), same branch.
     expect(tickHint({ state: STATE.IDLE, idleSinceMs: TIMING.HINT_AFTER }, grid, existing)).toBe(existing);
+  });
+});
+
+describe('drawHintButton', () => {
+  const grid = createBoard(mulberry32(1));   // solvable board → findModestHint hits
+
+  // Stub the render call so no canvas is needed; capture the pushed onClick and
+  // the disabled flag exactly as the real drawHitButton would receive them.
+  function drawAt(clock, cascade) {
+    clockMs.mockReturnValue(clock);
+    const buttons = [];
+    let disabled = null;
+    const spy = vi.spyOn(render, 'drawHitButton').mockImplementation(
+      (x, y, w, h, label, onClick, btns, cx, cy, opts) => {
+        btns.push({ x, y, w, h, label, onClick });
+        disabled = opts.disabled;
+      });
+    drawHintButton(4, 8, cascade, grid, cascade.setHint, buttons, 0, 0);
+    spy.mockRestore();
+    return { button: buttons[0], disabled };
+  }
+
+  // drawHintButton's 15s cooldown lives in module state (starts -Infinity), so
+  // one test drives the whole ready → used → cooling → re-armed lifecycle.
+  it('is IDLE-only, sets the hint via the callback, and re-arms after 15s', () => {
+    const setHint = vi.fn();
+    const idle = { state: STATE.IDLE, setHint };
+    const busy = { state: STATE.SWAPPING, setHint };
+
+    // Never used → ready; drawn enabled with the 💡 glyph at the given spot.
+    let d = drawAt(0, busy);
+    expect(d.button).toMatchObject({ x: 4, y: 8, w: 42, h: 32, label: '💡' });
+    expect(d.disabled).toBe(false);
+    // Ready but the cascade is mid-action → click is a no-op (IDLE-only).
+    d.button.onClick();
+    expect(setHint).not.toHaveBeenCalled();
+
+    // Idle + ready → click feeds the modest hint to the scene and arms the cooldown.
+    d = drawAt(0, idle);
+    d.button.onClick();
+    expect(setHint).toHaveBeenCalledExactlyOnceWith(findModestHint(grid));
+
+    // 10s later: still cooling → drawn disabled, click gated by !ready.
+    d = drawAt(10_000, idle);
+    expect(d.disabled).toBe(true);
+    d.button.onClick();
+    expect(setHint).toHaveBeenCalledTimes(1);
+
+    // Exactly 15s after use: re-armed (>=) → enabled and clickable again.
+    d = drawAt(15_000, idle);
+    expect(d.disabled).toBe(false);
+    d.button.onClick();
+    expect(setHint).toHaveBeenCalledTimes(2);
   });
 });

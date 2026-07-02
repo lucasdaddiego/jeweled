@@ -149,6 +149,39 @@ describe('migration fallback', () => {
       vi.doUnmock('../src/config.js');
     }
   });
+
+  it('applies a defined migration step and stamps the version forward', async () => {
+    vi.resetModules();
+    vi.doMock('../src/config.js', async () => ({
+      ...(await vi.importActual('../src/config.js')),
+      STORAGE_VERSION: 2,
+    }));
+    // MIGRATIONS is deliberately module-private (nothing exported to mutate),
+    // so inject the v1→v2 step through the prototype chain instead: the
+    // literal has no own [1], making `MIGRATIONS[1]` fall through to
+    // Object.prototype. Non-enumerable so no spread / for-in anywhere can see
+    // it; removed in finally.
+    Object.defineProperty(Object.prototype, 1, {
+      value: (v1) => ({ ...v1, zen: { ...v1.zen, migratedBadge: true } }),
+      configurable: true,
+      writable: true,
+      enumerable: false,
+    });
+    try {
+      const config = await import('../src/config.js');
+      localStorage.setItem(config.STORAGE_KEY, JSON.stringify({ version: 1, zen: { bestScore: 5 } }));
+      const storage = await import('../src/storage.js');
+      const s = storage.load();
+      expect(s.zen.bestScore).toBe(5);          // data carried through the step
+      expect(s.zen.migratedBadge).toBe(true);   // the step actually ran
+      expect(s.version).toBe(2);                // stamped forward by the loop
+      // The pre-migration blob was archived before the step ran.
+      expect(JSON.parse(localStorage.getItem(`${config.STORAGE_KEY}:v1:archive`)).version).toBe(1);
+    } finally {
+      delete Object.prototype[1];
+      vi.doUnmock('../src/config.js');
+    }
+  });
 });
 
 describe('saveKey / debounce / flush', () => {
@@ -265,5 +298,127 @@ describe('saveAll() called before any load()', () => {
     const { storage, KEY, VERSION } = await fresh();
     storage.saveAll();   // cache is still null here -> defaultState()
     expect(JSON.parse(localStorage.getItem(KEY)).version).toBe(VERSION);
+  });
+});
+
+describe('defaultState additions', () => {
+  it('pins the newer default leaves: sound, gemStyle, undo charge, zen gallery', async () => {
+    const { storage } = await fresh();
+    const s = storage.load();
+    expect(s.settings.sound).toBe(true);
+    expect(s.settings.gemStyle).toBe('color');
+    expect(s.powerups.charges).toEqual({ shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 0 });
+    expect(s.zen.gallery).toEqual([]);
+  });
+});
+
+describe('exportString / importString', () => {
+  // 'JWLD1.' is the wire-format contract for portable save codes — hardcoded
+  // here on purpose so an accidental prefix change in storage.js fails a test.
+  const PREFIX = 'JWLD1.';
+  // Build a code around an ASCII JSON payload (btoa alone is latin1-only;
+  // storage.js goes through TextEncoder for the general unicode case).
+  const codeOf = (json) => PREFIX + btoa(json);
+
+  it('exportString emits PREFIX + base64(JSON of the live state)', async () => {
+    const { storage, VERSION } = await fresh();
+    const code = storage.exportString();
+    expect(code.startsWith(PREFIX)).toBe(true);
+    const decoded = JSON.parse(atob(code.slice(PREFIX.length)));   // default state is pure ASCII
+    expect(decoded.version).toBe(VERSION);
+    expect(decoded.settings.gemStyle).toBe('color');
+  });
+
+  it('roundtrips: export → reset → import restores state, unicode intact', async () => {
+    const { storage, KEY } = await fresh();
+    storage.saveKey('profile', { playerName: 'Ana☃|x' });   // non-latin1 char exercises the TextEncoder path
+    storage.saveKey('zen', { bestScore: 777 });
+    const code = storage.exportString();                     // exports the live cache, pending debounce and all
+
+    storage.reset();
+    expect(storage.load().zen.bestScore).toBe(0);            // really gone
+
+    expect(storage.importString(`  ${code}\n`)).toEqual({ ok: true });  // surrounding whitespace is trimmed
+    const s = storage.load();
+    expect(s.profile.playerName).toBe('Ana☃|x');
+    expect(s.zen.bestScore).toBe(777);
+    // importString saveAll()s immediately — persisted without any flush().
+    expect(JSON.parse(localStorage.getItem(KEY)).profile.playerName).toBe('Ana☃|x');
+  });
+
+  it('rejects a missing / unprefixed code with reason "format"', async () => {
+    const { storage, KEY } = await fresh();
+    expect(storage.importString()).toEqual({ ok: false, reason: 'format' });
+    expect(storage.importString('   ')).toEqual({ ok: false, reason: 'format' });
+    expect(storage.importString('GEMS1.' + btoa('{}'))).toEqual({ ok: false, reason: 'format' });
+    expect(localStorage.getItem(KEY)).toBeNull();            // failed imports never save
+  });
+
+  it('rejects corrupt base64 and non-JSON payloads with reason "parse"', async () => {
+    const { storage } = await fresh();
+    expect(storage.importString(`${PREFIX}%%%not base64%%%`)).toEqual({ ok: false, reason: 'parse' });
+    expect(storage.importString(codeOf('{not json'))).toEqual({ ok: false, reason: 'parse' });
+  });
+
+  it('rejects well-formed JSON that is not a plausible save with reason "shape"', async () => {
+    const { storage, KEY } = await fresh();
+    expect(storage.importString(codeOf('null'))).toEqual({ ok: false, reason: 'shape' });            // null
+    expect(storage.importString(codeOf('"progress"'))).toEqual({ ok: false, reason: 'shape' });      // not an object
+    expect(storage.importString(codeOf('{"settings":{}}'))).toEqual({ ok: false, reason: 'shape' }); // missing profile
+    expect(storage.importString(codeOf('{"profile":{}}'))).toEqual({ ok: false, reason: 'shape' });  // missing settings
+    expect(localStorage.getItem(KEY)).toBeNull();            // failed imports never save
+  });
+
+  it('deep-merges the import over defaults, backfilling missing leaf keys', async () => {
+    const { storage, VERSION } = await fresh();
+    const res = storage.importString(codeOf(JSON.stringify({
+      version: 999,                                    // stamped back to current, not trusted
+      profile: { playerName: 'P' },                    // missing createdAt / lastPlayedMode
+      settings: { haptic: false },                     // missing every newer settings leaf
+      zen: { bestScore: 9 },                           // missing gallery / saveState / ...
+    })));
+    expect(res).toEqual({ ok: true });
+    const s = storage.load();
+    expect(s.version).toBe(VERSION);
+    expect(s.profile.playerName).toBe('P');
+    expect(s.profile.lastPlayedMode).toBeNull();       // backfilled
+    expect(s.settings.haptic).toBe(false);             // imported value wins
+    expect(s.settings.sound).toBe(true);               // backfilled new defaults
+    expect(s.settings.gemStyle).toBe('color');
+    expect(s.settings.language).toBe('auto');
+    expect(s.zen.bestScore).toBe(9);
+    expect(s.zen.gallery).toEqual([]);                 // backfilled
+    expect(s.powerups.charges.undo).toBe(0);           // whole missing subtree backfilled
+  });
+
+  it('clears the future-version read-only latch so the import and later saves persist', async () => {
+    const future = JSON.stringify({ version: 999, zen: { bestScore: 12345 } });
+    const { storage, KEY } = await fresh(future);
+    storage.load();                                    // future blob → this session went read-only
+    storage.saveAll();
+    expect(localStorage.getItem(KEY)).toBe(future);    // latch engaged: write suppressed
+
+    const res = storage.importString(codeOf('{"profile":{"playerName":"Imp"},"settings":{}}'));
+    expect(res).toEqual({ ok: true });
+    // importString itself persisted (its saveAll ran un-suppressed)...
+    expect(JSON.parse(localStorage.getItem(KEY)).profile.playerName).toBe('Imp');
+    // ...and the latch stays cleared for later writes too.
+    storage.saveKey('zen', { bestScore: 5 });
+    storage.flush();
+    expect(JSON.parse(localStorage.getItem(KEY)).zen.bestScore).toBe(5);
+  });
+
+  it('filters prototype-polluting keys out of an imported blob', async () => {
+    const { storage } = await fresh();
+    const res = storage.importString(codeOf(
+      '{"profile":{"playerName":"safe"},"settings":{"haptic":false},"__proto__":{"polluted":true},"constructor":1,"prototype":2}',
+    ));
+    expect(res).toEqual({ ok: true });
+    expect({}.polluted).toBeUndefined();
+    const s = storage.load();
+    expect(Object.prototype.hasOwnProperty.call(s, 'constructor')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(s, 'prototype')).toBe(false);
+    expect(s.profile.playerName).toBe('safe');
+    expect(s.settings.haptic).toBe(false);
   });
 });

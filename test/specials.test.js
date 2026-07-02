@@ -227,3 +227,33 @@ describe('scoreForClear', () => {
     expect(scoreForClear(0, 1)).toBe(0);
   });
 });
+
+describe('activate — chain restriction to effect-bearing specials', () => {
+  it('LINE_H sweeping a COIN / GRAVITY / WILDCARD does not chain them, but chains a FIRE', () => {
+    const g = fullGrid(0);
+    g[2][1] = newCell(0, SPECIAL.COIN);
+    g[2][3] = newCell(0, SPECIAL.GRAVITY);
+    g[2][4] = newCell(0, SPECIAL.WILDCARD);
+    g[2][6] = newCell(0, SPECIAL.FIRE);
+    const { cleared, chained } = activate(g, 2, 0, SPECIAL.LINE_H);
+    expect(cleared.size).toBe(GRID);                       // whole row still clears
+    expect(chained).toEqual([{ r: 2, c: 6, special: SPECIAL.FIRE, type: 0 }]);
+  });
+});
+
+describe('activate — FIRE only clears live neighbors', () => {
+  it('skips already-nulled neighbors instead of scoring empty cells', () => {
+    const g = fullGrid(0);
+    g[3][4] = null;                                        // cleared by an earlier wave
+    g[5][4] = null;
+    const { cleared } = activate(g, 4, 4, SPECIAL.FIRE);
+    // Source + the two live orthogonal neighbors only.
+    expect([...cleared].sort()).toEqual(['4,3', '4,4', '4,5']);
+  });
+
+  it('still spreads to all four neighbors when they are live', () => {
+    const g = fullGrid(0);
+    const { cleared } = activate(g, 4, 4, SPECIAL.FIRE);
+    expect([...cleared].sort()).toEqual(['3,4', '4,3', '4,4', '4,5', '5,4']);
+  });
+});

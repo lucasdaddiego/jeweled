@@ -162,7 +162,7 @@ const en = {
   'puzzle.9.name':  'Color Bomb',        'puzzle.9.hint':  'Match 5 in a row.',
   'puzzle.10.name': 'Deep Chain',        'puzzle.10.hint': 'Trigger a 3-cascade chain.',
   'puzzle.11.name': 'Marathon',          'puzzle.11.hint': 'Pace yourself.',
-  'puzzle.12.name': 'Star Maker',        'puzzle.12.hint': 'A 4-chain spawns a Star.',
+  'puzzle.12.name': 'Star Maker',        'puzzle.12.hint': 'A 3-chain spawns a Star. Go one deeper.',
 
   // Colors + specials (used by puzzle goal/progress strings)
   'color.0': 'red',    'color.1': 'blue',    'color.2': 'green',
@@ -180,7 +180,7 @@ const en = {
   'stats.zenBestScore':           'Zen best score',
   'stats.zenRunsPlayed':          'Zen runs played',
   'stats.classicLevelsBeaten':    'Classic levels beaten',
-  'stats.classicLevelsBeatenValue': '{n} / 300',
+  'stats.classicLevelsBeatenValue': '{n} / {total}',
   'stats.dailyChallengesCompleted':'Daily challenges completed',
   'stats.blitzBestScore':         'Blitz best score',
 
@@ -195,6 +195,18 @@ const en = {
   'powerup.chargeEarned':      '+1 charge earned!',
   'powerup.pickFill':          'Pick which power-up to fill',
   'powerup.saveForLater':      'Or save for later (tap outside)',
+
+  // Screen-reader scene announcements (aria-live region — see main.js announce())
+  'sr.scene.title':        'Main menu',
+  'sr.scene.levelSelect':  'Level select',
+  'sr.scene.puzzleSelect': 'Puzzle select',
+  'sr.scene.stats':        'Stats and achievements',
+  'sr.scene.result':       'Result screen',
+  'sr.scene.gameZen':      'Zen game started',
+  'sr.scene.gameClassic':  'Classic game started',
+  'sr.scene.gameDaily':    'Daily challenge started',
+  'sr.scene.gameBlitz':    'Blitz game started',
+  'sr.scene.gamePuzzle':   'Puzzle started',
 
   // Achievement toast
   'achievement.unlocked': 'ACHIEVEMENT UNLOCKED',
@@ -220,6 +232,127 @@ const en = {
   'achievement.first_puzzle.name':   'Puzzler',        'achievement.first_puzzle.desc':   'Solve your first Puzzle.',
   'achievement.score_zen_10k.name':  'Zen 10k',        'achievement.score_zen_10k.desc':  'Score 10,000 in a single Zen run.',
   'achievement.score_zen_100k.name': 'Zen 100k',       'achievement.score_zen_100k.desc': 'Score 100,000 in a single Zen run.',
+
+  // === 2026-07 feature drop ===
+
+  // New settings
+  'settings.sound':           'Sound',
+  'settings.gemStyle':        'Gem style',
+  'settings.gemStyleColor':   'Colors',
+  'settings.gemStyleShapes':  'Shapes',
+  'settings.gempedia':        '📖 Gempedia',
+  'settings.exportSave':      '📤 Export save',
+  'settings.importSave':      '📥 Import save',
+  'settings.exportCopied':    'Save code copied to clipboard!',
+  'settings.exportManual':    'Your save code (copy it):',
+  'settings.importLabel':     'Paste your save code',
+  'settings.importApply':     'Import',
+  'settings.importDone':      'Save imported!',
+  'settings.importBad':       'That code is not valid.',
+
+  // Undo power-up
+  'powerup.undo.label':       'Undo',
+
+  // Daily meta
+  'daily.streak':             '🔥 {n}-day streak',
+  'title.dailyNext':          'Next in {h}h {m}m',
+  'result.viewHistory':       '📆 History',
+  'dailyHistory.title':       '📅 Daily History',
+  'dailyHistory.empty':       'No dailies played yet',
+  'dailyHistory.totalPlayed': '{n} played',
+
+  // Daily leaderboard (optional backend — hidden when unavailable)
+  'leaderboard.title':        '🏆 Today’s top scores',
+  'leaderboard.rank':         'Your rank: #{rank}',
+  'leaderboard.empty':        'Be the first today!',
+
+  // Blitz time bonus + speed streak
+  'blitz.timeBonus':          '+{n}s',
+  'blitz.streak':             'SPEED x{n}',
+
+  // Classic ice + boss levels
+  'classic.ice':              '🧊 {n}',
+  'classic.boss':             '👑 BOSS',
+
+  // Zen painting gallery
+  'zen.gallery':              '🖼 Gallery',
+  'gallery.title':            '🖼 Zen Paintings',
+  'gallery.empty':            'Finish a Painting-mode Zen run to fill this gallery.',
+
+  // Stats additions
+  'stats.biggestCascade':     'Biggest cascade',
+  'stats.specialsCreated':    'Specials created',
+  'stats.bombsDefused':       'Bombs defused',
+  'stats.timePlayed':         'Time played',
+  'stats.timeValue':          '{h}h {m}m',
+
+  // New achievements
+  'achievement.streak_3.name':   'Regular',        'achievement.streak_3.desc':   'Play the Daily 3 days in a row.',
+  'achievement.streak_7.name':   'Devoted',        'achievement.streak_7.desc':   'Keep a 7-day Daily streak.',
+  'achievement.defuse_10.name':  'Bomb Squad',     'achievement.defuse_10.desc':  'Defuse 10 time bombs.',
+  'achievement.powerup_10.name': 'Well Equipped',  'achievement.powerup_10.desc': 'Use 10 power-up charges.',
+
+  // Hand-laid puzzles (13-15)
+  'puzzle.13.name': 'The Cross',        'puzzle.13.hint': 'The middle wants to be a T.',
+  'puzzle.14.name': 'Twin Peaks',       'puzzle.14.hint': 'Two 4-runs are one swap away.',
+  'puzzle.15.name': 'Checkmate',        'puzzle.15.hint': 'Only one move wins. Find it.',
+
+  // Screen-reader extras
+  'sr.scene.gempedia':        'Gempedia reference',
+  'sr.scene.dailyHistory':    'Daily history',
+  'sr.scene.gallery':         'Zen painting gallery',
+
+  // Gempedia
+  'gempedia.title':           'Gempedia',
+  'gempedia.subtitle':        'Every special gem and power-up',
+  'gempedia.line.name':       'Line Gem',
+  'gempedia.line.desc':       'Clears its entire row or column when matched.',
+  'gempedia.line.how':        'Match 4 in a row.',
+  'gempedia.colorBomb.name':  'Color Bomb',
+  'gempedia.colorBomb.desc':  'Swap with any gem to clear every gem of that color. Two together wipe the whole board.',
+  'gempedia.colorBomb.how':   'Match 5 in a row, or clear 7+ gems in one wave.',
+  'gempedia.areaBomb.name':   'Area Bomb',
+  'gempedia.areaBomb.desc':   'Explodes the 3×3 area around it when matched.',
+  'gempedia.areaBomb.how':    'Match in a T or L shape, or clear 6+ gems in one wave.',
+  'gempedia.star.name':       'Star',
+  'gempedia.star.desc':       'Clears every gem of the two most common colors on the board.',
+  'gempedia.star.how':        'Chain a 3-deep cascade; also drops in rarely.',
+  'gempedia.fire.name':       'Fire',
+  'gempedia.fire.desc':       'Burns the 4 gems around it (up, down, left, right) when matched.',
+  'gempedia.fire.how':        'Drops in rarely from the top.',
+  'gempedia.lightning.name':  'Lightning',
+  'gempedia.lightning.desc':  'Zaps 3 random gems of its own color when matched.',
+  'gempedia.lightning.how':   'Drops in rarely from the top.',
+  'gempedia.wildcard.name':   'Wildcard',
+  'gempedia.wildcard.desc':   'Matches as any color.',
+  'gempedia.wildcard.how':    'Drops in rarely from the top.',
+  'gempedia.coin.name':       'Coin',
+  'gempedia.coin.desc':       'Multiplies the score of the wave that clears it by 5.',
+  'gempedia.coin.how':        'Drops in rarely from the top.',
+  'gempedia.gravity.name':    'Gravity Gem',
+  'gempedia.gravity.desc':    'Flips gravity for the next fall — gems rise instead of dropping.',
+  'gempedia.gravity.how':     'Drops in rarely from the top.',
+  'gempedia.timeBomb.name':   'Time Bomb',
+  'gempedia.timeBomb.desc':   'Counts down once per move. Match it to defuse it (+500). At zero it explodes — in Classic that costs 5 moves.',
+  'gempedia.timeBomb.how':    'Drops in rarely from the top; starts at 7.',
+  'gempedia.timePlus.name':   'Time Gem',
+  'gempedia.timePlus.desc':   'Adds +2 seconds to the Blitz clock when cleared.',
+  'gempedia.timePlus.how':    'Drops in during Blitz only.',
+  'gempedia.shuffle.name':    'Shuffle',
+  'gempedia.shuffle.desc':    'Rearranges every gem on the board.',
+  'gempedia.shuffle.how':     'Earn a charge every 1500 points (max 3).',
+  'gempedia.colorBlast.name': 'Color Blast',
+  'gempedia.colorBlast.desc': 'Tap a gem to clear every gem of that color.',
+  'gempedia.colorBlast.how':  'Earn a charge every 1500 points (max 3).',
+  'gempedia.bombDrop.name':   'Bomb Drop',
+  'gempedia.bombDrop.desc':   'Tap a gem to turn it into an Area Bomb.',
+  'gempedia.bombDrop.how':    'Earn a charge every 1500 points (max 3).',
+  'gempedia.recolor.name':    'Recolor',
+  'gempedia.recolor.desc':    'Tap a gem and pick a new color for it.',
+  'gempedia.recolor.how':     'Earn a charge every 1500 points (max 3).',
+  'gempedia.undo.name':       'Undo',
+  'gempedia.undo.desc':       'Rewinds the board to before your last move.',
+  'gempedia.undo.how':        'Earn a charge every 1500 points (max 3).',
 };
 
 const es = {
@@ -352,7 +485,7 @@ const es = {
   'puzzle.9.name':  'Bomba de Color',     'puzzle.9.hint':  'Combina 5 en fila.',
   'puzzle.10.name': 'Cadena Profunda',    'puzzle.10.hint': 'Encadena una cascada de 3.',
   'puzzle.11.name': 'Maratón',            'puzzle.11.hint': 'A tu ritmo.',
-  'puzzle.12.name': 'Creador de Estrellas','puzzle.12.hint': 'Una cadena de 4 crea una Estrella.',
+  'puzzle.12.name': 'Creador de Estrellas','puzzle.12.hint': 'Una cadena de 3 crea una Estrella. Ve una más allá.',
 
   // Colors + specials
   'color.0': 'rojas',    'color.1': 'azules',   'color.2': 'verdes',
@@ -370,7 +503,7 @@ const es = {
   'stats.zenBestScore':           'Mejor puntuación Zen',
   'stats.zenRunsPlayed':          'Partidas Zen jugadas',
   'stats.classicLevelsBeaten':    'Niveles Clásico superados',
-  'stats.classicLevelsBeatenValue': '{n} / 300',
+  'stats.classicLevelsBeatenValue': '{n} / {total}',
   'stats.dailyChallengesCompleted':'Diarios completados',
   'stats.blitzBestScore':         'Mejor puntuación Blitz',
 
@@ -385,6 +518,18 @@ const es = {
   'powerup.chargeEarned':      '¡+1 carga obtenida!',
   'powerup.pickFill':          'Elige qué potenciador rellenar',
   'powerup.saveForLater':      'O guarda para luego (toca fuera)',
+
+  // Screen-reader scene announcements
+  'sr.scene.title':        'Menú principal',
+  'sr.scene.levelSelect':  'Selección de nivel',
+  'sr.scene.puzzleSelect': 'Selección de puzzle',
+  'sr.scene.stats':        'Estadísticas y logros',
+  'sr.scene.result':       'Pantalla de resultado',
+  'sr.scene.gameZen':      'Partida Zen iniciada',
+  'sr.scene.gameClassic':  'Partida Clásico iniciada',
+  'sr.scene.gameDaily':    'Desafío diario iniciado',
+  'sr.scene.gameBlitz':    'Partida Blitz iniciada',
+  'sr.scene.gamePuzzle':   'Puzzle iniciado',
 
   // Achievement toast
   'achievement.unlocked': 'LOGRO DESBLOQUEADO',
@@ -410,6 +555,127 @@ const es = {
   'achievement.first_puzzle.name':   'Resolvedor',          'achievement.first_puzzle.desc':   'Resuelve tu primer Puzzle.',
   'achievement.score_zen_10k.name':  'Zen 10k',             'achievement.score_zen_10k.desc':  'Anota 10.000 en una sola partida Zen.',
   'achievement.score_zen_100k.name': 'Zen 100k',            'achievement.score_zen_100k.desc': 'Anota 100.000 en una sola partida Zen.',
+
+  // === 2026-07 feature drop ===
+
+  // New settings
+  'settings.sound':           'Sonido',
+  'settings.gemStyle':        'Estilo de gemas',
+  'settings.gemStyleColor':   'Colores',
+  'settings.gemStyleShapes':  'Formas',
+  'settings.gempedia':        '📖 Gempedia',
+  'settings.exportSave':      '📤 Exportar datos',
+  'settings.importSave':      '📥 Importar datos',
+  'settings.exportCopied':    '¡Código copiado al portapapeles!',
+  'settings.exportManual':    'Tu código de guardado (cópialo):',
+  'settings.importLabel':     'Pega tu código de guardado',
+  'settings.importApply':     'Importar',
+  'settings.importDone':      '¡Datos importados!',
+  'settings.importBad':       'Ese código no es válido.',
+
+  // Undo power-up
+  'powerup.undo.label':       'Deshacer',
+
+  // Daily meta
+  'daily.streak':             '🔥 Racha de {n} días',
+  'title.dailyNext':          'Próximo en {h}h {m}m',
+  'result.viewHistory':       '📆 Historial',
+  'dailyHistory.title':       '📅 Historial Diario',
+  'dailyHistory.empty':       'Aún no hay diarios jugados',
+  'dailyHistory.totalPlayed': '{n} jugados',
+
+  // Daily leaderboard
+  'leaderboard.title':        '🏆 Mejores de hoy',
+  'leaderboard.rank':         'Tu puesto: #{rank}',
+  'leaderboard.empty':        '¡Sé el primero de hoy!',
+
+  // Blitz time bonus + speed streak
+  'blitz.timeBonus':          '+{n}s',
+  'blitz.streak':             'VELOCIDAD x{n}',
+
+  // Classic ice + boss levels
+  'classic.ice':              '🧊 {n}',
+  'classic.boss':             '👑 JEFE',
+
+  // Zen painting gallery
+  'zen.gallery':              '🖼 Galería',
+  'gallery.title':            '🖼 Pinturas Zen',
+  'gallery.empty':            'Termina una partida Zen en modo pintura para llenar la galería.',
+
+  // Stats additions
+  'stats.biggestCascade':     'Mayor cascada',
+  'stats.specialsCreated':    'Especiales creados',
+  'stats.bombsDefused':       'Bombas desactivadas',
+  'stats.timePlayed':         'Tiempo jugado',
+  'stats.timeValue':          '{h}h {m}m',
+
+  // New achievements
+  'achievement.streak_3.name':   'Constante',        'achievement.streak_3.desc':   'Juega el Diario 3 días seguidos.',
+  'achievement.streak_7.name':   'Devoto',           'achievement.streak_7.desc':   'Mantén una racha diaria de 7 días.',
+  'achievement.defuse_10.name':  'Artificiero',      'achievement.defuse_10.desc':  'Desactiva 10 bombas de tiempo.',
+  'achievement.powerup_10.name': 'Bien Equipado',    'achievement.powerup_10.desc': 'Usa 10 cargas de potenciador.',
+
+  // Hand-laid puzzles (13-15)
+  'puzzle.13.name': 'La Cruz',          'puzzle.13.hint': 'El centro quiere ser una T.',
+  'puzzle.14.name': 'Cumbres Gemelas',  'puzzle.14.hint': 'Dos líneas de 4 a un solo movimiento.',
+  'puzzle.15.name': 'Jaque Mate',       'puzzle.15.hint': 'Solo un movimiento gana. Encuéntralo.',
+
+  // Screen-reader extras
+  'sr.scene.gempedia':        'Referencia Gempedia',
+  'sr.scene.dailyHistory':    'Historial diario',
+  'sr.scene.gallery':         'Galería de pinturas Zen',
+
+  // Gempedia
+  'gempedia.title':           'Gempedia',
+  'gempedia.subtitle':        'Todas las gemas especiales y potenciadores',
+  'gempedia.line.name':       'Gema de Línea',
+  'gempedia.line.desc':       'Al combinarla, limpia toda su fila o columna.',
+  'gempedia.line.how':        'Combina 4 en línea.',
+  'gempedia.colorBomb.name':  'Bomba de Color',
+  'gempedia.colorBomb.desc':  'Intercámbiala con cualquier gema para eliminar todas las de ese color. Dos juntas limpian todo el tablero.',
+  'gempedia.colorBomb.how':   'Combina 5 en línea, o elimina 7+ gemas en una ola.',
+  'gempedia.areaBomb.name':   'Bomba de Área',
+  'gempedia.areaBomb.desc':   'Al combinarla, explota el área de 3×3 a su alrededor.',
+  'gempedia.areaBomb.how':    'Combina en forma de T o L, o elimina 6+ gemas en una ola.',
+  'gempedia.star.name':       'Estrella',
+  'gempedia.star.desc':       'Elimina todas las gemas de los dos colores más comunes del tablero.',
+  'gempedia.star.how':        'Encadena una cascada de 3; también cae rara vez.',
+  'gempedia.fire.name':       'Fuego',
+  'gempedia.fire.desc':       'Al combinarla, quema las 4 gemas contiguas (arriba, abajo, izquierda y derecha).',
+  'gempedia.fire.how':        'Cae rara vez desde arriba.',
+  'gempedia.lightning.name':  'Rayo',
+  'gempedia.lightning.desc':  'Al combinarla, alcanza 3 gemas al azar de su color.',
+  'gempedia.lightning.how':   'Cae rara vez desde arriba.',
+  'gempedia.wildcard.name':   'Comodín',
+  'gempedia.wildcard.desc':   'Combina con cualquier color.',
+  'gempedia.wildcard.how':    'Cae rara vez desde arriba.',
+  'gempedia.coin.name':       'Moneda',
+  'gempedia.coin.desc':       'Multiplica por 5 la puntuación de la ola que la elimina.',
+  'gempedia.coin.how':        'Cae rara vez desde arriba.',
+  'gempedia.gravity.name':    'Gema de Gravedad',
+  'gempedia.gravity.desc':    'Invierte la gravedad en la próxima caída: las gemas suben en vez de caer.',
+  'gempedia.gravity.how':     'Cae rara vez desde arriba.',
+  'gempedia.timeBomb.name':   'Bomba de Tiempo',
+  'gempedia.timeBomb.desc':   'Cuenta atrás con cada movimiento. Combínala para desactivarla (+500). Si llega a cero explota: en Clásico cuesta 5 movimientos.',
+  'gempedia.timeBomb.how':    'Cae rara vez desde arriba; empieza en 7.',
+  'gempedia.timePlus.name':   'Gema de Tiempo',
+  'gempedia.timePlus.desc':   'Añade +2 segundos al reloj de Blitz al eliminarla.',
+  'gempedia.timePlus.how':    'Solo aparece en Blitz.',
+  'gempedia.shuffle.name':    'Mezclar',
+  'gempedia.shuffle.desc':    'Reordena todas las gemas del tablero.',
+  'gempedia.shuffle.how':     'Gana una carga cada 1500 puntos (máx. 3).',
+  'gempedia.colorBlast.name': 'Estallido de Color',
+  'gempedia.colorBlast.desc': 'Toca una gema para eliminar todas las de ese color.',
+  'gempedia.colorBlast.how':  'Gana una carga cada 1500 puntos (máx. 3).',
+  'gempedia.bombDrop.name':   'Lanzar Bomba',
+  'gempedia.bombDrop.desc':   'Toca una gema para convertirla en una Bomba de Área.',
+  'gempedia.bombDrop.how':    'Gana una carga cada 1500 puntos (máx. 3).',
+  'gempedia.recolor.name':    'Recolorear',
+  'gempedia.recolor.desc':    'Toca una gema y elige un color nuevo para ella.',
+  'gempedia.recolor.how':     'Gana una carga cada 1500 puntos (máx. 3).',
+  'gempedia.undo.name':       'Deshacer',
+  'gempedia.undo.desc':       'Rebobina el tablero a como estaba antes de tu último movimiento.',
+  'gempedia.undo.how':        'Gana una carga cada 1500 puntos (máx. 3).',
 };
 
 const DICTIONARIES = { en, es };

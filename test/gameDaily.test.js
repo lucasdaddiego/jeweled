@@ -37,6 +37,13 @@ function dragSwap(scene, a, b) {
 
 function spendMoves(c, n) { for (let i = 0; i < n; i++) c.onMoveCommitted(); }
 
+// ISO date `back` days before today (local), for seeding streak history.
+function dayISO(back) {
+  const d = new Date();
+  d.setDate(d.getDate() - back);
+  return todayISO(d);
+}
+
 function movesLabel(spy) {
   const call = spy.mock.calls.find(c => typeof c[0] === 'string' && c[0].startsWith('Moves left:'));
   return call ? call[0] : null;
@@ -151,6 +158,26 @@ describe('cascade callbacks', () => {
     c.onIdleReached();                              // movesLeft === 30 > 0
     expect(setScene).not.toHaveBeenCalled();
   });
+
+  it('onBombsDefused feeds the defuse counter toward Bomb Squad', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade();
+    c.onBombsDefused(4);
+    expect(storage.load().achievements.counters.bombsDefused).toBe(4);
+  });
+
+  it('tapping the hint button while idle feeds a hint into the next draw', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    daily.draw();                                   // registers the 💡 hit rect
+    // Hint button: 36×32 at (boardR - btnW - 42, hudY + 2); wide → btnW = 76.
+    const hx = render.boardRight() - 76 - 42 + 18;
+    const hy = render.layout.hudY + 2 + 16;
+    daily.onPointer({ type: 'down', x: hx, y: hy });
+    const spy = vi.spyOn(render, 'drawBoard');
+    daily.draw();
+    expect(spy.mock.calls[0][1].hint).toEqual(findModestHint(c.grid));
+  });
 });
 
 describe('swap → match → score (integration via pointer on the seeded board)', () => {
@@ -185,8 +212,25 @@ describe('finalize() on running out of moves', () => {
     expect(s.daily.totalDaysPlayed).toBe(1);
     expect(s.daily.todaySubmittedDate).toBe(today);
     expect(s.daily.history[today]).toEqual({ score: 500, movesUsed: DAILY_MOVES });
+    // The result args also carry the moves spent and the streak (first day = 1)
+    // so the result scene can render + share them without re-deriving.
     expect(setScene).toHaveBeenCalledWith('result',
-      expect.objectContaining({ mode: 'daily', outcome: 'done', score: 500, date: today, isReplay: false, isNewBest: true, prevBest: 100 }));
+      expect.objectContaining({ mode: 'daily', outcome: 'done', score: 500, date: today, isReplay: false, isNewBest: true, prevBest: 100, streak: 1, movesUsed: DAILY_MOVES }));
+  });
+
+  it('reports the running streak (seeded prior days + today) and unlocks streak_3', () => {
+    storage.saveKey('daily', {
+      history: { [dayISO(1)]: { score: 5, movesUsed: 30 }, [dayISO(2)]: { score: 6, movesUsed: 30 } },
+    });
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    c.score = 100;
+    spendMoves(c, DAILY_MOVES);
+    c.onIdleReached();
+    // Streak is computed AFTER today's write: day-2, day-1, today → 3.
+    expect(setScene).toHaveBeenCalledWith('result',
+      expect.objectContaining({ streak: 3, movesUsed: DAILY_MOVES }));
+    expect(storage.load().achievements.unlocked.streak_3).toBeTruthy();
   });
 
   it('a first-of-day run that misses the best still records the day but is not a new best', () => {
@@ -276,6 +320,52 @@ describe('draw()', () => {
     daily.draw();
     expect(btn.mock.calls[0][2]).toBe(56);
     expect(btn.mock.calls[0][4]).toBe('←');
+  });
+
+  it('shows the running streak next to the date once it is worth bragging about', () => {
+    // Yesterday + the day before played, today not yet → streak 2 (grace rule).
+    storage.saveKey('daily', {
+      history: { [dayISO(1)]: { score: 10, movesUsed: 30 }, [dayISO(2)]: { score: 9, movesUsed: 30 } },
+    });
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    const txt = vi.spyOn(render, 'drawText');
+    daily.draw();
+    const label = txt.mock.calls.find(call => typeof call[0] === 'string' && call[0].startsWith('🔥'));
+    expect(label).toBeTruthy();
+    expect(label[0]).toContain('🔥 2-day streak');
+    expect(label[0]).toContain('·');               // streak · date composite label
+  });
+
+  it('a 1-day streak stays on the plain date label (streak < 2 branch)', () => {
+    storage.saveKey('daily', {
+      history: { [dayISO(1)]: { score: 10, movesUsed: 30 } },   // yesterday only
+    });
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    const txt = vi.spyOn(render, 'drawText');
+    daily.draw();
+    expect(txt.mock.calls.some(call => typeof call[0] === 'string' && call[0].startsWith('🔥'))).toBe(false);
+  });
+
+  it('tolerates a missing daily.history blob in draw and finalize (|| {} fallbacks)', () => {
+    const today = todayISO();
+    // Non-replay draw with history stripped → draw-side dailyStreak(… || {}).
+    storage.saveKey('daily', { history: undefined });
+    daily.enter({});
+    let c = debugHud.activeCascade(); runToIdle(daily, c);
+    expect(() => daily.draw()).not.toThrow();
+    daily.exit();
+    // Replay finalize skips the history write, so the || {} on the streak
+    // read is what keeps finalize alive when history is absent.
+    storage.saveKey('daily', { todaySubmittedDate: today, history: undefined });
+    daily.enter({});
+    c = debugHud.activeCascade(); runToIdle(daily, c);
+    c.score = 50;
+    spendMoves(c, DAILY_MOVES);
+    expect(() => c.onIdleReached()).not.toThrow();
+    expect(setScene).toHaveBeenCalledWith('result',
+      expect.objectContaining({ isReplay: true, streak: 0 }));
   });
 
   it('moves color: calm (>5), amber (<=5), and warm pulse (<=3)', () => {

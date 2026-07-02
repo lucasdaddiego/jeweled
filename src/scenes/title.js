@@ -2,9 +2,11 @@
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
+import * as sound from '../sound.js';
 import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
 import { todayISO } from '../rng.js';
+import { dailyStreak, msUntilNextDaily, countdownParts } from '../dailyMeta.js';
 import { setScene, clockMs } from '../main.js';
 import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
@@ -33,6 +35,7 @@ export function enter() {
 
 export function exit() {
   hideNameEntry();
+  hideImportEntry();
   settingsOpen = false;
 }
 
@@ -47,8 +50,20 @@ export function draw() {
   const profile = state.profile;
 
   const btnW = Math.min(360, w - 40);
-  const last = profile.lastPlayedMode;
-  const continueState = last && state[last] && state[last].saveState ? state[last].saveState : null;
+  // Continue scans BOTH modes that snapshot (most recent savedAt wins) rather
+  // than trusting profile.lastPlayedMode — playing a Daily/Blitz in between
+  // used to hide a parked Zen/Classic run, and starting that mode fresh then
+  // silently overwrote the save on the first idle snapshot.
+  let continueMode = null;
+  let continueState = null;
+  for (const mode of ['zen', 'classic']) {
+    const ss = state[mode]?.saveState;
+    if (!ss) continue;
+    if (!continueState || String(ss.savedAt || '') > String(continueState.savedAt || '')) {
+      continueMode = mode;
+      continueState = ss;
+    }
+  }
   // 5 mode buttons + the Stats/Settings sub-row (counts as one row for layout).
   const buttonCount = (continueState ? 1 : 0) + 5 + 1;
 
@@ -101,14 +116,14 @@ export function draw() {
   // Continue button (if applicable). Only Zen + Classic snapshot saveState today;
   // other modes never set it, so they'll never appear here.
   const CONTINUE_SCENES = { zen: 'gameZen', classic: 'gameClassic' };
-  if (continueState && CONTINUE_SCENES[last]) {
-    const label = last === 'classic' ? i18n.t('title.continueClassic') : i18n.t('title.continueZen');
-    const subtitle = last === 'classic'
+  if (continueState && CONTINUE_SCENES[continueMode]) {
+    const label = continueMode === 'classic' ? i18n.t('title.continueClassic') : i18n.t('title.continueZen');
+    const subtitle = continueMode === 'classic'
       ? i18n.t('title.continueSubtitleClassic', { level: continueState.level, score: i18n.formatNumber(continueState.score) })
       : i18n.t('title.continueSubtitleZen', { score: i18n.formatNumber(continueState.score) });
     const x = (w - btnW) / 2;
     drawHitButton(x, y, btnW, btnH, label, () => {
-      setScene(CONTINUE_SCENES[last], { restoreFrom: continueState });
+      setScene(CONTINUE_SCENES[continueMode], { restoreFrom: continueState });
     }, { subtitle });
     y += btnH + btnGap;
   }
@@ -140,9 +155,17 @@ export function draw() {
       ? { year: 'numeric', month: 'numeric', day: 'numeric' }
       : undefined);
     const submitted = state.daily.todaySubmittedDate === today;
-    const subtitle = submitted
-      ? i18n.t('title.dailySubtitleDone', { date: formattedToday })
-      : i18n.t('title.dailySubtitle', { date: formattedToday });
+    // Done today → countdown to the next board; otherwise the date, with the
+    // running streak appended when there is one worth bragging about.
+    let subtitle;
+    if (submitted) {
+      const parts = countdownParts(msUntilNextDaily());
+      subtitle = `${i18n.t('title.dailySubtitleDone', { date: formattedToday })}  ·  ${i18n.t('title.dailyNext', { h: parts.hours, m: parts.minutes })}`;
+    } else {
+      subtitle = i18n.t('title.dailySubtitle', { date: formattedToday });
+      const streak = dailyStreak(state.daily.history || {}, today);
+      if (streak >= 2) subtitle += `  ·  ${i18n.t('daily.streak', { n: streak })}`;
+    }
     drawHitButton(x, y, btnW, btnH, i18n.t('title.daily'), () => setScene('gameDaily'), { subtitle });
     y += btnH + btnGap;
   }
@@ -309,7 +332,7 @@ function drawSettingsOverlay() {
   ctx.fillRect(0, 0, w, h);
 
   const panelW = Math.min(380, w - 40);
-  const panelH = 420;   // bumped to fit the language row
+  const panelH = Math.min(560, h - 24);
   const px = (w - panelW) / 2;
   const py = (h - panelH) / 2;
   render.roundRect(ctx, px, py, panelW, panelH, 16);
@@ -318,17 +341,23 @@ function drawSettingsOverlay() {
   ctx.strokeStyle = 'rgba(255,255,255,0.1)';
   ctx.stroke();
 
-  render.drawText(i18n.t('settings.title'), px + panelW / 2, py + 20, {
+  render.drawText(i18n.t('settings.title'), px + panelW / 2, py + 18, {
     font: 'bold 22px -apple-system, system-ui, sans-serif',
     align: 'center',
   });
 
   const settings = storage.getSettings();
-  let ty = py + 60;
-  const rowH = 44;
+  let ty = py + 54;
+  const rowH = 40;
 
   drawToggle(px + 20, ty, panelW - 40, i18n.t('settings.haptic'), settings.haptic, () => {
     storage.saveKey('settings', { haptic: !settings.haptic });
+  }); ty += rowH;
+
+  drawToggle(px + 20, ty, panelW - 40, i18n.t('settings.sound'), settings.sound !== false, () => {
+    const next = !(settings.sound !== false);
+    storage.saveKey('settings', { sound: next });
+    sound.setEnabled(next);
   }); ty += rowH;
 
   drawToggle(px + 20, ty, panelW - 40, i18n.t('settings.paintingMode'), settings.paintingMode, () => {
@@ -337,10 +366,38 @@ function drawSettingsOverlay() {
 
   // Language segmented control: label on left, three pills on right.
   drawLanguageRow(px + 20, ty, panelW - 40);
-  ty += rowH + 12;
+  ty += rowH + 8;
+
+  // Gem style — 'Colors' vs colorblind-friendly 'Shapes'.
+  drawGemStyleRow(px + 20, ty, panelW - 40, settings);
+  ty += rowH + 8;
+
+  // Gempedia (specials/power-ups reference) + Zen painting gallery.
+  {
+    const half = (panelW - 40 - 10) / 2;
+    drawHitButton(px + 20, ty, half, 36, i18n.t('settings.gempedia'), () => {
+      settingsOpen = false;
+      setScene('gempedia');
+    }, { kind: 'settings' });
+    drawHitButton(px + 20 + half + 10, ty, half, 36, i18n.t('zen.gallery'), () => {
+      settingsOpen = false;
+      setScene('gallery');
+    }, { kind: 'settings' });
+    ty += 46;
+  }
+
+  // Save transfer: export copies a portable code, import pastes one.
+  {
+    const half = (panelW - 40 - 10) / 2;
+    drawHitButton(px + 20, ty, half, 36, i18n.t('settings.exportSave'),
+      exportSave, { kind: 'settings' });
+    drawHitButton(px + 20 + half + 10, ty, half, 36, i18n.t('settings.importSave'),
+      () => { showImportEntry(); }, { kind: 'settings' });
+    ty += 46;
+  }
 
   // Reset progress
-  drawHitButton(px + 20, ty + 4, panelW - 40, 40, i18n.t('settings.resetProgress'), async () => {
+  drawHitButton(px + 20, ty, panelW - 40, 36, i18n.t('settings.resetProgress'), async () => {
     if (await dialogs.confirm(i18n.t('settings.resetConfirm'))) {
       storage.reset();
       i18n.init();
@@ -349,12 +406,64 @@ function drawSettingsOverlay() {
       showNameEntry();
     }
   }, { kind: 'settings' });
-  ty += 60;
 
   // Close button
-  drawHitButton(px + panelW / 2 - 60, py + panelH - 50, 120, 36, i18n.t('settings.close'), () => {
+  drawHitButton(px + panelW / 2 - 60, py + panelH - 46, 120, 34, i18n.t('settings.close'), () => {
     settingsOpen = false;
   }, { kind: 'settings' });
+}
+
+async function exportSave() {
+  const code = storage.exportString();
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(code);
+      await dialogs.alert(i18n.t('settings.exportCopied'));
+      return;
+    }
+  } catch { /* clipboard denied — fall through to the manual modal */ }
+  // No clipboard access: show the code in a copyable input.
+  showImportEntry(code);
+}
+
+// Two-pill segmented control mirroring drawLanguageRow, for the gem style.
+function drawGemStyleRow(x, y, w, settings) {
+  render.drawText(i18n.t('settings.gemStyle'), x, y + 10, {
+    font: '15px -apple-system, system-ui, sans-serif',
+  });
+  const labelW = 90;
+  const pillsX = x + labelW;
+  const pillsW = w - labelW;
+  const ctx = render.ctxRef();
+  const active = settings.gemStyle === 'shapes' ? 'shapes' : 'color';
+  const options = [
+    { key: 'color',  label: i18n.t('settings.gemStyleColor') },
+    { key: 'shapes', label: i18n.t('settings.gemStyleShapes') },
+  ];
+  const pillW = (pillsW - 6) / options.length;
+  const pillH = 30;
+  const py = y + 6;
+  for (let i = 0; i < options.length; i++) {
+    const opt = options[i];
+    const pillX = pillsX + i * (pillW + 6);
+    ctx.save();
+    render.roundRect(ctx, pillX, py, pillW, pillH, 8);
+    ctx.fillStyle = active === opt.key ? '#7c3aed' : 'rgba(255,255,255,0.10)';
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '13px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(opt.label, pillX + pillW / 2, py + pillH / 2);
+    ctx.restore();
+    buttons.push({
+      x: pillX, y: py, w: pillW, h: pillH, kind: 'settings',
+      onClick: () => {
+        storage.saveKey('settings', { gemStyle: opt.key });
+        render.setGemStyle(opt.key);
+      },
+    });
+  }
 }
 
 // Three-pill segmented control: Auto / English / Español. The active pill is
@@ -415,7 +524,7 @@ function drawToggle(x, y, w, label, value, onClick) {
 
 export function onPointer(evt) {
   if (evt.type !== 'down') return;
-  if (nameInputWrap) return; // name modal blocks
+  if (nameInputWrap || importInputWrap) return; // DOM modals block the canvas
   if (settingsOpen) {
     for (let i = buttons.length - 1; i >= 0; i--) {
       const b = buttons[i];
@@ -484,4 +593,57 @@ function showNameEntry() {
 function hideNameEntry() {
   if (nameInputWrap && nameInputWrap.parentNode) nameInputWrap.parentNode.removeChild(nameInputWrap);
   nameInputWrap = null;
+}
+
+// === Save-code import / manual-export modal (second DOM input, mirrors the
+// name entry — canvas dialogs can't host a paste-able text field) ===
+let importInputWrap = null;
+
+function showImportEntry(prefill = '') {
+  if (importInputWrap) return;
+  importInputWrap = document.createElement('div');
+  importInputWrap.id = 'import-input-wrap';
+  const card = document.createElement('div');
+  const label = document.createElement('label');
+  label.setAttribute('for', 'import-input');
+  label.textContent = prefill ? i18n.t('settings.exportManual') : i18n.t('settings.importLabel');
+  const input = document.createElement('input');
+  input.id = 'import-input';
+  input.type = 'text';
+  input.autocomplete = 'off';
+  if (prefill) { input.value = prefill; input.readOnly = true; }
+  const ok = document.createElement('button');
+  ok.textContent = prefill ? i18n.t('common.close') : i18n.t('settings.importApply');
+  const cancel = document.createElement('button');
+  cancel.textContent = i18n.t('common.cancel');
+  card.appendChild(label);
+  card.appendChild(input);
+  card.appendChild(ok);
+  if (!prefill) card.appendChild(cancel);
+  importInputWrap.appendChild(card);
+  document.body.appendChild(importInputWrap);
+  setTimeout(() => { input.focus(); if (prefill) input.select(); }, 50);
+  cancel.addEventListener('click', hideImportEntry);
+  ok.addEventListener('click', async () => {
+    if (prefill) { hideImportEntry(); return; }
+    const res = storage.importString(input.value);
+    hideImportEntry();
+    if (res.ok) {
+      // Re-derive everything the imported blob controls.
+      i18n.init();
+      sound.setEnabled(storage.getSettings().sound !== false);
+      render.setGemStyle(storage.getSettings().gemStyle);
+      needsNameEntry = !storage.getProfile().playerName;
+      settingsOpen = false;
+      if (needsNameEntry) showNameEntry();
+      await dialogs.alert(i18n.t('settings.importDone'));
+    } else {
+      await dialogs.alert(i18n.t('settings.importBad'));
+    }
+  });
+}
+
+function hideImportEntry() {
+  if (importInputWrap && importInputWrap.parentNode) importInputWrap.parentNode.removeChild(importInputWrap);
+  importInputWrap = null;
 }

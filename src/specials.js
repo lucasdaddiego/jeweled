@@ -15,6 +15,23 @@ import { GRID, TYPES, SPECIAL, SCORE, LIGHTNING_TARGETS } from './config.js';
 //
 // Specials inside the cleared set whose own activation hasn't been processed yet
 // are returned via `chained` for the cascade to process recursively.
+
+// Only these specials have a clear-effect worth a chained activation wave.
+// GRAVITY / TIME_BOMB / COIN / WILDCARD are passive: their effects (flip,
+// defuse bonus, score multiplier, run extension) are handled by the cascade
+// when it scans a cleared set — chaining them would just burn an extra
+// RESOLVING cycle (~300ms stutter) and award a free 1-cell score wave.
+const CHAINABLE = new Set([
+  SPECIAL.LINE_H, SPECIAL.LINE_V, SPECIAL.AREA_BOMB, SPECIAL.COLOR_BOMB,
+  SPECIAL.FIRE, SPECIAL.LIGHTNING, SPECIAL.STAR,
+]);
+
+function maybeChain(chained, cell, r, c) {
+  if (cell && CHAINABLE.has(cell.special) && !chainedHas(chained, r, c)) {
+    chained.push({ r, c, special: cell.special, type: cell.type });
+  }
+}
+
 export function activate(grid, r, c, special, partnerType = null, rng = Math.random, partnerSpecial = null, selfType = null) {
   const myType = selfType ?? grid[r]?.[c]?.type ?? null;
   const cleared = new Set();
@@ -30,9 +47,7 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
       for (let cc = 0; cc < GRID; cc++) {
         const cell = grid[r][cc];
         if (cell) cleared.add(`${r},${cc}`);
-        if (cell && cell.special && (cc !== c) && !chainedHas(chained, r, cc)) {
-          chained.push({ r, c: cc, special: cell.special, type: cell.type });
-        }
+        if (cc !== c) maybeChain(chained, cell, r, cc);
       }
       cleared.add(`${r},${c}`);
       break;
@@ -41,9 +56,7 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
       for (let rr = 0; rr < GRID; rr++) {
         const cell = grid[rr][c];
         if (cell) cleared.add(`${rr},${c}`);
-        if (cell && cell.special && (rr !== r) && !chainedHas(chained, rr, c)) {
-          chained.push({ r: rr, c, special: cell.special, type: cell.type });
-        }
+        if (rr !== r) maybeChain(chained, cell, rr, c);
       }
       cleared.add(`${r},${c}`);
       break;
@@ -55,9 +68,7 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
           if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
           const cell = grid[nr][nc];
           if (cell) cleared.add(`${nr},${nc}`);
-          if (cell && cell.special && (nr !== r || nc !== c) && !chainedHas(chained, nr, nc)) {
-            chained.push({ r: nr, c: nc, special: cell.special, type: cell.type });
-          }
+          if (nr !== r || nc !== c) maybeChain(chained, cell, nr, nc);
         }
       }
       cleared.add(`${r},${c}`);
@@ -86,9 +97,7 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
           const cell = grid[rr][cc];
           if (cell && cell.type === target) {
             cleared.add(`${rr},${cc}`);
-            if (cell.special && (rr !== r || cc !== c) && !chainedHas(chained, rr, cc)) {
-              chained.push({ r: rr, c: cc, special: cell.special, type: cell.type });
-            }
+            if (rr !== r || cc !== c) maybeChain(chained, cell, rr, cc);
           }
         }
       }
@@ -108,17 +117,20 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
       break;
     }
     case SPECIAL.FIRE: {
-      // Spread to 4 orthogonal neighbors.
+      // Spread to 4 orthogonal neighbors. Only LIVE neighbors count — an
+      // empty cell (already cleared by the wave that triggered this fire)
+      // must not inflate the depth-multiplied score or spawn FX on nothing.
+      // The activating cell itself is added unconditionally, matching the
+      // other specials.
       const N = [[-1,0],[1,0],[0,-1],[0,1]];
       cleared.add(`${r},${c}`);
       for (const [dr, dc] of N) {
         const nr = r + dr, nc = c + dc;
         if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
-        cleared.add(`${nr},${nc}`);
         const nb = grid[nr][nc];
-        if (nb && nb.special && !chainedHas(chained, nr, nc)) {
-          chained.push({ r: nr, c: nc, special: nb.special, type: nb.type });
-        }
+        if (!nb) continue;
+        cleared.add(`${nr},${nc}`);
+        maybeChain(chained, nb, nr, nc);
       }
       break;
     }
@@ -142,10 +154,7 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
       for (let i = 0; i < Math.min(LIGHTNING_TARGETS, targets.length); i++) {
         const t = targets[i];
         cleared.add(`${t.r},${t.c}`);
-        const cell = grid[t.r][t.c];
-        if (cell && cell.special && !chainedHas(chained, t.r, t.c)) {
-          chained.push({ r: t.r, c: t.c, special: cell.special, type: cell.type });
-        }
+        maybeChain(chained, grid[t.r][t.c], t.r, t.c);
       }
       break;
     }
@@ -171,9 +180,7 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
           const isWildcard = cell.special === SPECIAL.WILDCARD;
           if (top.has(cell.type) || isWildcard) {
             cleared.add(`${rr},${cc}`);
-            if (cell.special && !isWildcard && (rr !== r || cc !== c) && !chainedHas(chained, rr, cc)) {
-              chained.push({ r: rr, c: cc, special: cell.special, type: cell.type });
-            }
+            if (rr !== r || cc !== c) maybeChain(chained, cell, rr, cc);
           }
         }
       }

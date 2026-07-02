@@ -12,7 +12,28 @@ describe('LEVELS table', () => {
 
   it('matches the published hand-tuned endpoints', () => {
     expect(LEVELS[0]).toEqual({ moves: 30, targetScore: 500 });
-    expect(LEVELS[49]).toEqual({ moves: 20, targetScore: 365500 });
+    // L50 is a boss level (every 10th) — the tuning numbers still hold.
+    expect(LEVELS[49]).toEqual({ moves: 20, targetScore: 365500, boss: true });
+  });
+
+  it('marks every 10th level as a boss and attaches ice layouts sparsely', () => {
+    for (let i = 10; i <= LEVELS.length; i += 10) expect(LEVELS[i - 1].boss).toBe(true);
+    expect(LEVELS[9 - 1].boss).toBeUndefined();
+    expect(Array.isArray(LEVELS[5 - 1].ice)).toBe(true);     // hand-picked L5
+    expect(Array.isArray(LEVELS[63 - 1].ice)).toBe(true);    // generated 63 = 7×9
+    expect(LEVELS[6 - 1].ice).toBeUndefined();
+    // Ice coordinates are unique, in-bounds board cells.
+    for (const def of LEVELS) {
+      if (!def.ice) continue;
+      const seen = new Set();
+      for (const [r, c] of def.ice) {
+        expect(r).toBeGreaterThanOrEqual(0); expect(r).toBeLessThan(8);
+        expect(c).toBeGreaterThanOrEqual(0); expect(c).toBeLessThan(8);
+        const k = `${r},${c}`;
+        expect(seen.has(k)).toBe(false);
+        seen.add(k);
+      }
+    }
   });
 
   it('generates levels 51+ with a 20-move budget and 500-rounded targets', () => {

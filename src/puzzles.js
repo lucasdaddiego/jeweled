@@ -1,6 +1,7 @@
 // Hand-designed Puzzle mode challenges. Each has a goal + move budget.
-// Boards are randomly generated for now; advanced puzzles could add seeded
-// or pre-laid grids in a later iteration.
+// Puzzles 1-12 use seeded-random boards; 13+ carry a hand-laid `board`
+// (8 rows of 8 type digits) with a designed solution. Authored boards are
+// verified by tests: no pre-existing matches and at least one valid move.
 //
 // `nameKey` and `hintKey` resolve through i18n at draw time so display strings
 // stay out of the data file. The IDs themselves remain neutral so save-state
@@ -27,6 +28,23 @@ export const PUZZLES = [
   { id: 10, nameKey: 'puzzle.10.name', hintKey: 'puzzle.10.hint', moves: 8,  goal: { type: 'cascadeDepth',       depth: 3 } },
   { id: 11, nameKey: 'puzzle.11.name', hintKey: 'puzzle.11.hint', moves: 20, goal: { type: 'totalScore',         amount: 5000 } },
   { id: 12, nameKey: 'puzzle.12.name', hintKey: 'puzzle.12.hint', moves: 10, goal: { type: 'cascadeDepth',       depth: 4 } },
+  // Hand-laid boards (verified by tests: no pre-match, ≥1 valid move, and the
+  // designed solution achieves the goal).
+  {
+    id: 13, nameKey: 'puzzle.13.name', hintKey: 'puzzle.13.hint', moves: 6,
+    goal: { type: 'createSpecial', special: SPECIAL.AREA_BOMB, count: 1 },
+    board: ['01230123', '23052301', '01250123', '23515301', '01250123', '23012301', '01230123', '23012301'],
+  },
+  {
+    id: 14, nameKey: 'puzzle.14.name', hintKey: 'puzzle.14.hint', moves: 8,
+    goal: { type: 'createSpecial', special: SPECIAL.LINE_H, count: 2 },
+    board: ['01230123', '23012301', '06636123', '23062301', '01234123', '23442401', '01230123', '23012301'],
+  },
+  {
+    id: 15, nameKey: 'puzzle.15.name', hintKey: 'puzzle.15.hint', moves: 1,
+    goal: { type: 'cascadeDepth', depth: 2 },
+    board: ['01230123', '23012301', '01230123', '23612301', '01530123', '23512301', '06460123', '23512301'],
+  },
 ];
 
 export function getPuzzle(id) {

@@ -10,7 +10,7 @@ import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects } from './sceneCommon.js';
+import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard } from '../grid.js';
 import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
@@ -18,6 +18,7 @@ import { setScene, clockMs } from '../main.js';
 import { DAILY_MOVES, SPECIAL } from '../config.js';
 import { GEM_PARTICLE_PALETTES } from '../render.js';
 import { mulberry32, dateHash, todayISO } from '../rng.js';
+import { dailyStreak } from '../dailyMeta.js';
 
 let grid = null;
 let cascade = null;
@@ -69,6 +70,7 @@ export function enter(args = {}) {
     });
   };
   cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
+  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
   cascade.onScoreChanged = (newScore, delta) => {
     if (delta > 0 && lastClearCenter) {
       spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
@@ -110,9 +112,13 @@ function finalize() {
     storage.recordPlayDay(cascade.score);
   }
   achievements.notifyMode('daily');
+  // Streak computed AFTER the write above so today's entry counts.
+  const streak = dailyStreak(storage.load().daily.history || {}, dailyDate);
+  if (!isReplay) achievements.notifyDailyStreak(streak);
   setScene('result', {
     mode: 'daily', outcome: 'done', score: cascade.score, date: dailyDate,
-    isReplay, isNewBest, prevBest,
+    isReplay, isNewBest, prevBest, streak,
+    movesUsed: DAILY_MOVES - movesLeft,
   });
 }
 
@@ -158,18 +164,26 @@ export function draw() {
       color: 'rgba(255,255,255,0.6)',
     });
   } else {
-    render.drawText(i18n.t('daily.todayLabel', { date: i18n.formatDate(dailyDate) }), boardR, hudY + 40, {
+    // Date, with the running streak alongside when there is one.
+    const streak = dailyStreak(storage.load().daily.history || {}, dailyDate);
+    const label = streak >= 2
+      ? `${i18n.t('daily.streak', { n: streak })}  ·  ${i18n.formatDate(dailyDate)}`
+      : i18n.t('daily.todayLabel', { date: i18n.formatDate(dailyDate) });
+    render.drawText(label, boardR, hudY + 40, {
       font: subFont, align: 'right',
       color: 'rgba(255,255,255,0.6)',
     });
   }
 
+  drawHintButton(boardR - btnW - 48, hudY + 2, cascade, grid, (h) => { hint = h; }, buttons, cursorX, cursorY);
   render.drawBoard(grid, { shakeAmp: cascade.shakeAmp, settings: storage.getSettings(), hint, idleMs: cascade.idleSinceMs });
 }
 
 export function onPointer(evt) {
-  hint = null;
+  // Clear the hint only on 'down' — the release ('up') of the tap that PRESSED
+  // the hint button would otherwise erase the hint it just granted.
   if (evt.type === 'down') {
+    hint = null;
     // Reverse iteration: top-most (most recently drawn) button wins.
     for (let i = buttons.length - 1; i >= 0; i--) {
       const b = buttons[i];

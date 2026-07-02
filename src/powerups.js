@@ -3,6 +3,7 @@
 
 import { GRID, SPECIAL, POWERUP_MILESTONE, POWERUP_MAX_CHARGES, POWERUP_SLOTS, TYPES } from './config.js';
 import * as storage from './storage.js';
+import * as achievements from './achievements.js';
 import { reshuffle } from './grid.js';
 
 // === Charge management ===
@@ -29,6 +30,7 @@ export function spendCharge(slot) {
   if (state.powerups.charges[slot] > 0) {
     state.powerups.charges[slot]--;
     storage.saveKey('powerups', state.powerups);
+    achievements.notifyPowerupUsed();
     return true;
   }
   return false;

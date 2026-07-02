@@ -426,14 +426,60 @@ describe('_afterActivations', () => {
   });
 });
 
-describe('_creditBombDefuses', () => {
+describe('_scanPassiveEffects', () => {
   it('credits live time-bombs and ignores empty / non-bomb cells', () => {
     const g = makeEmptyGrid();
     g[1][1] = newCell(0, SPECIAL.TIME_BOMB, 4);
     g[2][2] = newCell(0);                              // plain → no credit
     const c = new Cascade(g);
-    const bonus = c._creditBombDefuses(new Set([key(0, 0), key(1, 1), key(2, 2)]));
-    expect(bonus).toBe(SCORE.BOMB_DEFUSE_BONUS);       // only the one bomb; (0,0) is null
+    const { defuseBonus, coinMultiplier } = c._scanPassiveEffects(new Set([key(0, 0), key(1, 1), key(2, 2)]));
+    expect(defuseBonus).toBe(SCORE.BOMB_DEFUSE_BONUS); // only the one bomb; (0,0) is null
+    expect(coinMultiplier).toBe(1);
+    expect(c.gravityFlipNext).toBe(false);
+  });
+
+  it('honors GRAVITY and stacks COIN multipliers', () => {
+    const g = makeEmptyGrid();
+    g[0][0] = newCell(0, SPECIAL.GRAVITY);
+    g[0][1] = newCell(1, SPECIAL.COIN);
+    g[0][2] = newCell(2, SPECIAL.COIN);
+    const c = new Cascade(g);
+    const { defuseBonus, coinMultiplier } = c._scanPassiveEffects(new Set([key(0, 0), key(0, 1), key(0, 2)]));
+    expect(defuseBonus).toBe(0);
+    expect(coinMultiplier).toBe(COIN_MULTIPLIER * COIN_MULTIPLIER);
+    expect(c.gravityFlipNext).toBe(true);
+  });
+});
+
+describe('activation-queue dedupe', () => {
+  it('drops a second queue entry for the same cell while unprocessed', () => {
+    const c = new Cascade(makeEmptyGrid());
+    expect(c._queueActivation({ r: 2, c: 3, special: SPECIAL.LINE_H, type: 0 })).toBe(true);
+    expect(c._queueActivation({ r: 2, c: 3, special: SPECIAL.COLOR_BOMB, type: 1 })).toBe(false);
+    expect(c.activationQueue).toHaveLength(1);
+    // Once the entry is processed (index advanced), the cell can queue again.
+    c.activationQueueIndex = 1;
+    expect(c._queueActivation({ r: 2, c: 3, special: SPECIAL.LINE_H, type: 0 })).toBe(true);
+  });
+
+  it('a color-bomb swap that also matches through the bomb cell fires the CB exactly once', () => {
+    // Base pattern with no matches; CB of type 4 at (4,4), partner type 5 at
+    // (4,5); type-4 gems at (4,6),(4,7) so the post-swap board has a 4,4,4 run
+    // THROUGH the CB cell — the old code queued the CB twice (second time
+    // without partnerType → full clear of its own color).
+    const g = makeEmptyGrid();
+    for (let r = 0; r < 8; r++) for (let col = 0; col < 8; col++) g[r][col] = newCell((r * 2 + col) % 4);
+    g[4][4] = newCell(4, SPECIAL.COLOR_BOMB);
+    g[4][5] = newCell(5);
+    g[4][6] = newCell(4);
+    g[4][7] = newCell(4);
+    g[0][0] = newCell(5); g[7][7] = newCell(5);        // partner-color targets
+    const c = new Cascade(g, { rng: mulberry32(99) });
+    const activated = [];
+    c.onSpecialActivated = (a) => activated.push(`${a.special}@${a.r},${a.c}`);
+    expect(c.tryStartSwap({ r: 4, c: 4 }, { r: 4, c: 5 })).toBe(true);
+    runToIdle(c);
+    expect(activated.filter(s => s.startsWith(`${SPECIAL.COLOR_BOMB}@4,5`))).toHaveLength(1);
   });
 });
 
@@ -583,5 +629,84 @@ describe('update — terminal switch cases reachable only by direct state set', 
     c.update(16);
     expect(c.state).toBe(STATE.IDLE);
     expect(c.onIdleReached).toHaveBeenCalled();
+  });
+});
+
+describe('bomb tick timing — defuse-before-explode', () => {
+  it('a countdown-1 bomb cleared by the CB swap activation defuses instead of exploding', () => {
+    const g = makeEmptyGrid();
+    for (let r = 0; r < 8; r++) for (let col = 0; col < 8; col++) g[r][col] = newCell((r * 2 + col) % 4);
+    g[4][4] = newCell(4, SPECIAL.COLOR_BOMB);
+    g[4][5] = newCell(5);                                   // partner: type 5
+    g[0][0] = newCell(5, SPECIAL.TIME_BOMB, 1);             // partner-color bomb about to blow
+    const c = new Cascade(g, { rng: mulberry32(11) });
+    const onBombExploded = vi.fn();
+    c.onBombExploded = onBombExploded;
+    expect(c.tryStartSwap({ r: 4, c: 4 }, { r: 4, c: 5 })).toBe(true);
+    const before = () => c.score;
+    runToIdle(c);
+    expect(onBombExploded).not.toHaveBeenCalled();          // defused, not exploded
+    expect(c.score).toBeGreaterThanOrEqual(SCORE.BOMB_DEFUSE_BONUS);
+  });
+
+  it('a countdown-1 bomb NOT reached by the move still explodes (after activations)', () => {
+    const g = makeEmptyGrid();
+    for (let r = 0; r < 8; r++) for (let col = 0; col < 8; col++) g[r][col] = newCell((r * 2 + col) % 4);
+    // Plain valid swap: 4,4,_ in row 4 — swapping (4,4)↔(4,5) drags the 4 at
+    // c5 into c4, completing the 4,4,4 run at c2..c4.
+    g[4][2] = newCell(4);
+    g[4][3] = newCell(4);
+    g[4][4] = newCell(5);
+    g[4][5] = newCell(4);
+    g[7][7] = newCell(6, SPECIAL.TIME_BOMB, 1);             // far away, untouched by the match
+    const c = new Cascade(g, { rng: mulberry32(12) });
+    const onBombExploded = vi.fn();
+    c.onBombExploded = onBombExploded;
+    expect(c.tryStartSwap({ r: 4, c: 4 }, { r: 4, c: 5 })).toBe(true);
+    runToIdle(c);
+    expect(onBombExploded).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('passive effects inside activation waves', () => {
+  it('a COIN swept by a line gem multiplies that wave and does not chain', () => {
+    const g = checker(2, 3);
+    g[0][3] = newCell(0, SPECIAL.COIN);
+    const c = new Cascade(g, { rng: mulberry32(13) });
+    const activated = [];
+    c.onSpecialActivated = (a) => activated.push(a.special);
+    c.activationQueue = [{ r: 0, c: 0, special: SPECIAL.LINE_H, type: 0 }];
+    c.activationQueueIndex = 0;
+    c.state = STATE.ACTIVATING_SPECIALS;
+    c._afterActivations();
+    // 8 cells × 10 × depth(1) × COIN 5×
+    expect(c.score).toBe(SCORE.PER_GEM_CLEARED * 8 * COIN_MULTIPLIER);
+    expect(activated).toEqual([SPECIAL.LINE_H]);            // coin itself never chains
+  });
+
+  it('a GRAVITY gem swept by a line gem still flips the next fall', () => {
+    const g = checker(2, 3);
+    g[0][3] = newCell(0, SPECIAL.GRAVITY);
+    const c = new Cascade(g, { rng: mulberry32(14) });
+    c.activationQueue = [{ r: 0, c: 0, special: SPECIAL.LINE_H, type: 0 }];
+    c.activationQueueIndex = 0;
+    c.state = STATE.ACTIVATING_SPECIALS;
+    c._afterActivations();
+    expect(c.gravityFlipNext).toBe(true);
+  });
+});
+
+describe('bonus-spawn placement vs queued activations', () => {
+  it('the big-wave bonus special never lands on a cell whose old special is queued to fire', () => {
+    const g = checker(2, 3);
+    g[0][0] = newCell(0, SPECIAL.FIRE);                     // will be queued by the scan
+    const c = new Cascade(g, { rng: mulberry32(15) });
+    // 6-cell external clear (big-wave AREA_BOMB threshold) listing the FIRE cell first,
+    // so the naive picker would have chosen (0,0).
+    const cleared = new Set([key(0, 0), key(2, 0), key(2, 2), key(2, 4), key(4, 0), key(4, 2)]);
+    expect(c.applyExternalClears(cleared)).toBe(true);
+    const bonus = c._pendingSpawns.find(s => s.special === SPECIAL.AREA_BOMB);
+    expect(bonus).toBeTruthy();
+    expect(`${bonus.r},${bonus.c}`).not.toBe('0,0');
   });
 });

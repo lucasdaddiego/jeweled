@@ -4,6 +4,7 @@
 import * as render from './render.js';
 import * as achievements from './achievements.js';
 import * as i18n from './i18n.js';
+import * as sound from './sound.js';
 
 const SLOTS = 4;
 const LIFE_MS = 3800;
@@ -15,6 +16,7 @@ function pump() {
     const t = achievements.consumeToast();
     if (!t) break;
     active.push({ ...t, age: 0 });
+    sound.achievementChime();
   }
 }
 
@@ -47,7 +49,9 @@ export function draw() {
       offsetX = p * cardW * 1.2;
     }
     const x = w - cardW - 16 + offsetX;
-    const y = 16 + i * (cardH + 10);
+    // Offset by the top safe-area inset so toasts clear the iOS status bar /
+    // notch in standalone mode.
+    const y = 16 + render.layout.safeTop + i * (cardH + 10);
     ctx.save();
     ctx.globalAlpha = alpha;
     render.roundRect(ctx, x, y, cardW, cardH, 12);

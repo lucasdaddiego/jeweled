@@ -5,6 +5,32 @@
 //   L51–70 Master        |  L71–90 Grandmaster
 //   L91–100 Legendary
 // Levels 1–50 are hand-tuned. 51–300 are generated below (see the growth tiers).
+//
+// Variety modifiers (applied by gameClassic):
+//   ice:  [[r,c], ...] — frost layers on those board cells; a clear AT the cell
+//         melts one layer. Winning requires target score AND all ice melted.
+//   boss: true — every 10th level; the board starts seeded with time bombs.
+
+// Ice layouts, keyed by the level number that first uses them. Kept small and
+// readable — geometric patterns, no duplicates within a layout.
+const ICE_LAYOUTS = {
+  // Four corners — gentle introduction.
+  corners:  [[0, 0], [0, 7], [7, 0], [7, 7]],
+  // Center 2x2 block.
+  core:     [[3, 3], [3, 4], [4, 3], [4, 4]],
+  // Full bottom row — gravity works against you.
+  floor:    [[7, 0], [7, 1], [7, 2], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7]],
+  // Diagonal band.
+  diagonal: [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6]],
+  // Ring around the center.
+  ring:     [[2, 2], [2, 3], [2, 4], [2, 5], [3, 2], [3, 5], [4, 2], [4, 5], [5, 2], [5, 3], [5, 4], [5, 5]],
+};
+
+// Level number → ice layout. Sparse; the rest of the levels stay pure score.
+const ICE_BY_LEVEL = {
+  5: 'corners', 12: 'core', 18: 'diagonal', 25: 'floor', 33: 'ring',
+  42: 'diagonal', 47: 'ring',
+};
 
 const HAND_TUNED = [
   // Tutorial / warm-up
@@ -71,15 +97,29 @@ const HAND_TUNED = [
 function genEndgame() {
   const out = [];
   let target = HAND_TUNED[HAND_TUNED.length - 1].targetScore;
+  const layoutKeys = Object.keys(ICE_LAYOUTS);
   for (let i = 51; i <= 300; i++) {
     const rate = i <= 100 ? 1.045 : i <= 200 ? 1.020 : 1.010;
     target = Math.round(target * rate / 500) * 500;
-    out.push({ moves: 20, targetScore: target });
+    const def = { moves: 20, targetScore: target };
+    // Every 7th endgame level gets an ice layout (cycled); keeps long-haul
+    // players out of pure-score monotony without redesigning 250 levels.
+    if (i % 7 === 0) def.ice = ICE_LAYOUTS[layoutKeys[(i / 7) % layoutKeys.length | 0]];
+    out.push(def);
   }
   return out;
 }
 
 export const LEVELS = [...HAND_TUNED, ...genEndgame()];
+
+// Post-process: attach hand-picked ice layouts and mark every 10th level as a
+// boss (time-bomb-seeded start — see gameClassic).
+for (const [lvl, key] of Object.entries(ICE_BY_LEVEL)) {
+  LEVELS[Number(lvl) - 1] = { ...LEVELS[Number(lvl) - 1], ice: ICE_LAYOUTS[key] };
+}
+for (let i = 10; i <= LEVELS.length; i += 10) {
+  LEVELS[i - 1] = { ...LEVELS[i - 1], boss: true };
+}
 
 export const LEVELS_PER_PAGE = 20;
 export function pageCount() {

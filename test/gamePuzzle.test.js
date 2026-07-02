@@ -11,8 +11,9 @@ import * as drag from '../src/dragInput.js';
 import * as debugHud from '../src/debugHud.js';
 import { setScene } from '../src/main.js';
 import { STATE } from '../src/cascade.js';
-import { newCell } from '../src/grid.js';
+import { newCell, findModestHint } from '../src/grid.js';
 import { SPECIAL } from '../src/config.js';
+import { getPuzzle } from '../src/puzzles.js';
 import { installCanvas, setViewport } from './helpers.js';
 
 // ---- helpers ----------------------------------------------------------------
@@ -89,19 +90,46 @@ describe('enter() wires the cascade callbacks', () => {
     expect(() => cascade.onSpecialActivated({ r: 0, c: 0, special: SPECIAL.STAR, targets: [{ r: 1, c: 0 }] })).not.toThrow();
     expect(() => cascade.onSpecialSpawned(SPECIAL.LINE_H)).not.toThrow();
   });
+
+  it('onBombsDefused feeds the defuse counter', () => {
+    const { cascade } = enterPuzzle({ puzzle: 1 });
+    cascade.onBombsDefused(3);
+    expect(storage.load().achievements.counters.bombsDefused).toBe(3);
+  });
+});
+
+describe('hint button', () => {
+  it('tapped while idle, it feeds a hint into the next draw', () => {
+    const { cascade, grid } = enterPuzzle({ puzzle: 1 });
+    drain(cascade);
+    puzzle.draw();                                  // registers the 💡 hit rect
+    const L = render.layout;
+    const btnW = L.isNarrow ? 56 : 76;
+    // Hint button: 36×32 at (boardR - btnW - 42, hudY + 2).
+    puzzle.onPointer({ type: 'down', x: render.boardRight() - btnW - 42 + 18, y: L.hudY + 2 + 16 });
+    const spy = vi.spyOn(render, 'drawBoard');
+    puzzle.draw();
+    expect(spy.mock.calls[0][1].hint).toEqual(findModestHint(grid));
+  });
 });
 
 // ---- enter redirects ---------------------------------------------------------
 
 describe('enter() guards a missing puzzle', () => {
-  it('redirects to the puzzle select when no id is given', () => {
+  // The redirect is deferred to a microtask and uses replace so the invalid
+  // gamePuzzle history entry (pushed by the outer setScene after enter()
+  // returns) is overwritten instead of orphaned on top of the stack.
+  it('redirects (deferred, replacing) to the puzzle select when no id is given', async () => {
     puzzle.enter();
-    expect(setScene).toHaveBeenCalledWith('puzzleSelect');
+    expect(setScene).not.toHaveBeenCalled();          // deferred past enter()
+    await Promise.resolve();                          // flush the microtask
+    expect(setScene).toHaveBeenCalledWith('puzzleSelect', {}, { replace: true });
   });
 
-  it('redirects when the id matches no puzzle', () => {
+  it('redirects when the id matches no puzzle', async () => {
     puzzle.enter({ puzzle: 999 });
-    expect(setScene).toHaveBeenCalledWith('puzzleSelect');
+    await Promise.resolve();
+    expect(setScene).toHaveBeenCalledWith('puzzleSelect', {}, { replace: true });
   });
 });
 
@@ -122,6 +150,50 @@ describe('enter / exit', () => {
     document.body.className = 'puzzle';
     puzzle.exit();
     expect(document.body.className).toBe('');
+  });
+});
+
+// ---- hand-laid boards (13+) ----------------------------------------------------
+
+describe('hand-laid boards', () => {
+  it('puzzle 13 builds the literal grid from its board digits and is playable', () => {
+    const p13 = getPuzzle(13);
+    const { cascade, grid } = enterPuzzle({ puzzle: 13 });
+
+    // The grid mirrors the authored digit rows cell-for-cell (spot checks
+    // across corners + the mid-board 5s that shape the designed T).
+    for (const [r, c] of [[0, 0], [0, 7], [1, 3], [2, 2], [3, 4], [5, 2], [7, 7]]) {
+      expect(grid[r][c].type).toBe(Number(p13.board[r][c]));
+    }
+
+    // Entry animation settles without clearing anything: an authored board has
+    // no pre-existing matches, so every type survives to IDLE intact.
+    drain(cascade);
+    expect(cascade.state).toBe(STATE.IDLE);
+    expect(grid.map(row => row.map(cell => cell.type)))
+      .toEqual(p13.board.map(row => [...row].map(Number)));
+    expect(cascade.score).toBe(0);
+
+    // Playable: at least one legal move exists, and performing it matches.
+    const hint = findModestHint(grid);
+    expect(hint).toBeTruthy();
+    swap(hint.a, hint.b);
+    puzzle.update(200);
+    drain(cascade);
+    expect(cascade.score).toBeGreaterThan(0);
+    expect(readMoves()).toBe(`Moves: ${p13.moves - 1}`);
+  });
+
+  it('every authored board (13-15) enters clean: literal grid, no pre-matches, a valid move', () => {
+    for (const id of [13, 14, 15]) {
+      const p = getPuzzle(id);
+      const { cascade, grid } = enterPuzzle({ puzzle: id });
+      drain(cascade);
+      expect(grid.map(row => row.map(cell => cell.type)),
+        `puzzle ${id} board`).toEqual(p.board.map(row => [...row].map(Number)));
+      expect(findModestHint(grid), `puzzle ${id} has a move`).toBeTruthy();
+      puzzle.exit();
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  handleMatchCleared, handleSpecialActivated, spawnScore, update, draw, clear,
+  handleMatchCleared, handleSpecialActivated, spawnText, spawnScore, update, draw, clear,
 } from '../src/floaters.js';
 import { SPECIAL, FLOATER_POOL } from '../src/config.js';
 import * as i18n from '../src/i18n.js';
@@ -148,6 +148,43 @@ describe('spawnScore', () => {
     spawnScore(0, 0, 0);
     spawnScore(0, 0, -5);
     expect(drawState().count).toBe(0);
+  });
+});
+
+describe('spawnText', () => {
+  it('spawns a one-off floater with the given text, color and size', () => {
+    spawnText(50, 100, 'SPEED x3', '#8fd1ff', 26);
+    update(200);                 // popK 200/750 > 0.2 → scale settles to 1
+    const s = drawState();
+    expect(s.count).toBe(1);
+    expect(s.text).toBe('SPEED x3');
+    expect(s.color).toBe('#8fd1ff');
+    expect(s.ctx.font).toBe('bold 26px -apple-system, system-ui, sans-serif');
+  });
+
+  it('rises like a combo floater (rise = 40, not the score 56)', () => {
+    spawnText(50, 100, '+2s');
+    expect(drawState().mainY).toBe(100);
+    update(150);                 // y -= (40/750)*150 = 8 → combo-kind trajectory
+    expect(drawState().mainY).toBeCloseTo(92, 3);
+    expect(drawState().mainX).toBe(50);   // no fly-to target → x stays put
+  });
+
+  it('defaults to white 20px when color/size are omitted', () => {
+    spawnText(0, 0, 'plain');
+    update(200);
+    const s = drawState();
+    expect(s.color).toBe('#ffffff');
+    expect(s.ctx.font).toBe('bold 20px -apple-system, system-ui, sans-serif');
+  });
+
+  it('reuses an evicted slot when the pool is exhausted', () => {
+    for (let i = 0; i < FLOATER_POOL; i++) spawnText(0, 0, `t${i}`);
+    expect(drawState().count).toBe(FLOATER_POOL);   // full
+    spawnText(0, 0, 'LAST');                        // saturated → eviction path
+    const s = drawState();
+    expect(s.count).toBe(FLOATER_POOL);             // capped, never grows
+    expect(s.allTexts).toContain('LAST');           // newest survived the cap
   });
 });
 

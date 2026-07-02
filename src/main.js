@@ -3,6 +3,7 @@
 import * as render from './render.js';
 import * as input from './input.js';
 import * as storage from './storage.js';
+import * as sound from './sound.js';
 import * as toasts from './toasts.js';
 import * as debugHud from './debugHud.js';
 import * as i18n from './i18n.js';
@@ -19,10 +20,13 @@ import * as gamePuzzle from './scenes/gamePuzzle.js';
 import * as puzzleSelect from './scenes/puzzleSelect.js';
 import * as stats from './scenes/stats.js';
 import * as result from './scenes/result.js';
+import * as gempedia from './scenes/gempedia.js';
+import * as dailyHistory from './scenes/dailyHistory.js';
+import * as gallery from './scenes/gallery.js';
 
 const SCENES = {
   title, levelSelect, gameZen, gameClassic, gameDaily, gameBlitz,
-  gamePuzzle, puzzleSelect, stats, result,
+  gamePuzzle, puzzleSelect, stats, result, gempedia, dailyHistory, gallery,
 };
 
 // Scenes whose transitions should *replace* history rather than push a new
@@ -32,6 +36,7 @@ const TRANSIENT_SOURCES = new Set(['result']);
 
 let current = null;
 let currentName = null;
+let currentArgs = {};
 let lastFrameTime = 0;
 let paused = false;
 let _handlingPopState = false;
@@ -93,7 +98,11 @@ function _swapScene(name, args) {
     current = SCENES.title;
     currentName = 'title';
   }
+  currentArgs = args || {};
   if (current.enter) current.enter(args);
+  // Announce the scene to assistive tech — the canvas is a black box to
+  // screen readers, so this hidden live region is the only navigation cue.
+  announce(i18n.t(`sr.scene.${currentName}`));
   // If a pointer is still down (typical case: scene swap fired from this
   // scene's own 'down' handler), drop the matching 'up' so it doesn't fire
   // a stray click on whatever button now sits under the release point.
@@ -102,6 +111,17 @@ function _swapScene(name, args) {
   sceneAlpha = 0;
   crossfadeT = 0;
   maybeReloadForServiceWorkerUpdate();
+}
+
+// Post a message to the visually-hidden aria-live region (index.html). The
+// canvas UI is invisible to screen readers; scene changes and end-of-run
+// results are announced here so the app is at least navigable by ear.
+export function announce(text) {
+  const el = document.getElementById('sr-live');
+  if (!el || !text) return;
+  // Clear-then-set so repeating the same string is re-announced.
+  el.textContent = '';
+  el.textContent = text;
 }
 
 // Strip non-serializable / oversized args before stashing in history.state.
@@ -230,8 +250,15 @@ function setupHistoryNav() {
     // After dismissing the dialog, re-push the just-popped scene state so the
     // history stack depth matches what it was before the Back press.
     if (dialogs.consumeBack()) {
+      // Re-push the CURRENT scene (the one still on screen), not e.state —
+      // e.state describes the entry we popped TO, so pushing it would leave
+      // the top history entry misidentifying the visible scene and a later
+      // Back would land somewhere unexpected. Skip when there's no app state
+      // to restore depth against (Back at the app's entry boundary).
       if (e.state && e.state.scene) {
-        history.pushState(e.state, '', location.hash);
+        history.pushState(
+          { scene: currentName, args: serializeArgs(currentArgs) }, '', `#${currentName}`,
+        );
       }
       return;
     }
@@ -257,6 +284,9 @@ function setupInput() {
   input.setup();
   input.on({
     onTapCell: (cell, x, y) => {
+      // First user gesture unlocks WebAudio (autoplay policy). Idempotent
+      // and near-free after the first call.
+      sound.unlock();
       if (dialogs.handlePointer({ type: 'down', cell, x, y })) return;
       if (current && current.onPointer) current.onPointer({ type: 'down', cell, x, y });
     },
@@ -284,13 +314,15 @@ function setupInput() {
   });
 }
 
-// True when the current scene is at a safe moment to reload (no in-flight game).
+// True when the current scene is at a safe moment to reload (no in-flight
+// game). 'result' is deliberately NOT here: reloading the instant the score
+// screen enters would eat the payoff moment — the update lands on the next
+// menu scene instead.
 function isSafeToReload() {
   return currentName === 'title'
       || currentName === 'levelSelect'
       || currentName === 'puzzleSelect'
-      || currentName === 'stats'
-      || currentName === 'result';
+      || currentName === 'stats';
 }
 
 function maybeReloadForServiceWorkerUpdate() {
@@ -301,16 +333,27 @@ function maybeReloadForServiceWorkerUpdate() {
 
 function init() {
   render.setupCanvas();
+  // Apply the persisted gem style before the first atlas build so the very
+  // first frame uses the right glyph set (setGemStyle only rebuilds on change).
+  render.setGemStyle(storage.getSettings().gemStyle);
   render.buildAtlas();
   setupInput();
   setupVisibility();
   setupHistoryNav();
 
   // Bootstrap initial scene. Use replaceState so a single browser-back from title
-  // leaves the page rather than re-displaying it.
+  // leaves the page rather than re-displaying it. A #hash naming a directly
+  // enterable scene (PWA manifest shortcuts: #gameDaily / #gameBlitz / #gameZen)
+  // boots straight into it; game scenes entered this way just start fresh runs.
   storage.load(); // ensure cache is warm
   i18n.init();    // resolve locale from settings/navigator/URL before any scene draws
-  setScene('title', {}, { replace: true });
+  sound.setEnabled(storage.getSettings().sound !== false);
+  const BOOT_SCENES = new Set([
+    'title', 'levelSelect', 'puzzleSelect', 'stats', 'gempedia',
+    'dailyHistory', 'gallery', 'gameZen', 'gameClassic', 'gameDaily', 'gameBlitz',
+  ]);
+  const bootHash = (location.hash || '').replace(/^#/, '');
+  setScene(BOOT_SCENES.has(bootHash) ? bootHash : 'title', {}, { replace: true });
 
   // Flush debounced storage writes synchronously on tab close. Without this,
   // the last ~250ms of changes (typical: end-of-run save) would be lost on
@@ -331,15 +374,22 @@ function init() {
     // brand-new SW claims this page isn't an "update" — there's no old code to
     // refresh from. Without this guard, every brand-new visitor would hit an
     // unnecessary reload as soon as they leave the title scene.
-    const hadController = !!navigator.serviceWorker.controller;
+    let hadController = !!navigator.serviceWorker.controller;
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
         .then(reg => {
           // When a new SW takes over an *already-controlled* page, reload — but
           // defer if the user is mid-game. They'll pick up the new version
-          // next time they navigate to a safe scene (title / result / etc).
+          // next time they navigate to a safe scene (title / stats / etc).
           navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (_swRefreshing || !hadController) return;
+            if (_swRefreshing) return;
+            if (!hadController) {
+              // First-ever install claiming this page isn't an update — but any
+              // LATER controllerchange in this session is. Flip the flag so a
+              // deploy during a long first session still refreshes.
+              hadController = true;
+              return;
+            }
             _swUpdateReady = true;
             maybeReloadForServiceWorkerUpdate();
           });
@@ -353,9 +403,10 @@ function init() {
   // Expose for debug — only on localhost / when ?debug=1 is in the URL.
   // Avoids letting any random visitor wipe their own state via devtools by
   // accident, and lays the groundwork for adding cloud sync later.
+  // (Explicit ===1 check so ?debug=0 doesn't enable it.)
   const dbg = location.hostname === 'localhost'
     || location.hostname === '127.0.0.1'
-    || new URLSearchParams(location.search).has('debug');
+    || new URLSearchParams(location.search).get('debug') === '1';
   _dbg = dbg;
   debugHud.setEnabled(dbg);
   if (dbg) window.__game = {
@@ -366,8 +417,30 @@ function init() {
   };
 }
 
+// Boot wrapper: if init() throws (the realistic case: OffscreenCanvas missing
+// on Safari < 16.4 — the app's hard compatibility floor), the boot splash
+// would otherwise spin forever with no message. Swap it for a plain
+// unsupported-browser notice instead of a silent hang.
+function boot() {
+  try {
+    init();
+  } catch (err) {
+    console.error('boot failed:', err);
+    const splash = document.getElementById('boot-splash');
+    if (!splash) return;
+    const dots = splash.querySelector('.boot-dots');
+    if (dots) dots.remove();
+    const msg = document.createElement('div');
+    msg.className = 'boot-error';
+    // i18n isn't reliably up when boot fails — hardcode both locales.
+    msg.textContent = 'This browser is too old to run Jeweled — please update it. / '
+      + 'Este navegador es demasiado antiguo para Jeweled — actualízalo.';
+    splash.appendChild(msg);
+  }
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', boot);
 } else {
-  init();
+  boot();
 }
