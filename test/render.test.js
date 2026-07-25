@@ -11,6 +11,7 @@ import { SPECIAL, GRID, DEFAULT_EMOJI, SHAPES_EMOJI } from '../src/config.js';
 import { newCell, makeEmptyGrid } from '../src/grid.js';
 import * as debugHud from '../src/debugHud.js';
 import * as painting from '../src/painting.js';
+import * as sound from '../src/sound.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -166,6 +167,16 @@ describe('layout / resize', () => {
     render.setPanelWidth(0);
   });
 
+  it('setPanelWidth is a no-op when the requested size is already active', () => {
+    const made = [];
+    class CountingOC extends StubOffscreenCanvas {
+      constructor(w, h) { super(w, h); made.push(this); }
+    }
+    vi.stubGlobal('OffscreenCanvas', CountingOC);
+    render.setPanelWidth(0);
+    expect(made).toHaveLength(0);
+  });
+
   it('registers a visualViewport resize listener when present', () => {
     const vv = { addEventListener: vi.fn() };
     window.visualViewport = vv;
@@ -294,16 +305,22 @@ describe('HUD helpers', () => {
 
   it('drawHitButton computes hover via the cursor and pushes a hit rect', () => {
     const buttons = [];
-    const click = () => {};
+    const click = vi.fn();
+    const tap = vi.spyOn(sound, 'uiTap');
     const X = 100, Y = 100, W = 80, H = 40;
     render.drawHitButton(X, Y, W, H, 'in', click, buttons, 140, 120);    // inside -> hover
     render.drawHitButton(X, Y, W, H, 'l', click, buttons, 90, 120);      // x < left
     render.drawHitButton(X, Y, W, H, 'r', click, buttons, 200, 120);     // x > right
     render.drawHitButton(X, Y, W, H, 't', click, buttons, 140, 90);      // y < top
     render.drawHitButton(X, Y, W, H, 'b', click, buttons, 140, 160, { kind: 'k', modal: true });
-    expect(buttons).toHaveLength(5);
-    expect(buttons[0]).toMatchObject({ x: X, y: Y, w: W, h: H, onClick: click });
+    render.drawHitButton(X, Y, W, H, 'off', click, buttons, 140, 120, { disabled: true });
+    expect(buttons).toHaveLength(6);
+    expect(buttons[0]).toMatchObject({ x: X, y: Y, w: W, h: H });
     expect(buttons[4]).toMatchObject({ kind: 'k', modal: true });
+    buttons[0].onClick();
+    buttons[5].onClick();
+    expect(tap).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledTimes(2);
   });
 
   it('drawPowerupSlot covers active/hover/charged/empty + ring states', () => {

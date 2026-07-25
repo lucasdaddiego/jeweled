@@ -31,6 +31,11 @@ cp index.html style.css manifest.json sw.js _headers favicon.svg dist/
 cp -R icons dist/
 cp -R src dist/
 
+# Generate the complete precache list from the publish tree. This runs before
+# SHA stamping and production bundling; deploy.yml can still replace the
+# generated /src/* entries with its fingerprinted single bundle.
+node scripts/generate-precache.mjs dist
+
 # Stamp commit SHA into the service-worker cache key + the BUILD constant.
 # CI provides $GITHUB_SHA; locally we read it from git. The script fails loud
 # if neither is available rather than silently shipping 'dev' to a deploy.
@@ -56,14 +61,13 @@ grep -q "^export const BUILD = '${SHA8}';\$" dist/src/build.js || {
   exit 1
 }
 
-# Guard: the SW precache list must name every module in src/ — a new module
-# that isn't listed silently breaks offline-from-source (dev/self-hosters).
-# Compare the sorted '/src/...' entries in sw.js against the actual tree.
+# Guard: the generated SW precache list must name every published module.
+# Compare the sorted '/src/...' entries in dist/sw.js against dist/src/.
 # sort -u: '/src/main.js' legitimately appears twice (PRECACHE + MAIN_ENTRY).
-PRECACHE_SRC=$(grep -oE "'/src/[^']+'" sw.js | tr -d "'" | sort -u)
-ACTUAL_SRC=$( (cd . && find src -type f -name '*.js' | sed 's|^|/|') | sort)
+PRECACHE_SRC=$(grep -oE "'/src/[^']+'" dist/sw.js | tr -d "'" | sort -u)
+ACTUAL_SRC=$( (cd dist && find src -type f -name '*.js' | sed 's|^|/|') | sort)
 if [ "$PRECACHE_SRC" != "$ACTUAL_SRC" ]; then
-  echo "Error: sw.js PRECACHE is out of sync with src/:" >&2
+  echo "Error: generated dist/sw.js PRECACHE is out of sync with dist/src/:" >&2
   diff <(echo "$PRECACHE_SRC") <(echo "$ACTUAL_SRC") >&2 || true
   exit 1
 fi

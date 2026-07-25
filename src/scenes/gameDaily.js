@@ -2,21 +2,18 @@
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
-import * as particles from '../particles.js';
-import * as waves from '../waves.js';
-import * as bolts from '../bolts.js';
 import * as drag from '../dragInput.js';
 import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
+import {
+  tickEffects, tickHint, clearEffects, drawHintButton, wireCascadePresentation,
+} from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard } from '../grid.js';
-import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
 import { setScene, clockMs } from '../main.js';
-import { DAILY_MOVES, SPECIAL } from '../config.js';
-import { GEM_PARTICLE_PALETTES } from '../render.js';
+import { DAILY_MOVES } from '../config.js';
 import { mulberry32, dateHash, todayISO } from '../rng.js';
 import { dailyStreak } from '../dailyMeta.js';
 
@@ -29,7 +26,6 @@ let movesLeft = DAILY_MOVES;
 let resultTriggered = false;
 let isReplay = false;
 let prevBest = 0;
-let lastClearCenter = null;
 let dailyDate = '';
 
 export function enter(args = {}) {
@@ -54,36 +50,15 @@ export function enter(args = {}) {
   debugHud.setActiveCascade(cascade);
   cascade.playEntryAnimation();
 
-  cascade.onMatchCleared = (cells, depth) => {
-    lastClearCenter = handleMatchCleared(cells, depth, {
-      render, particles, waves,
-      palettes: GEM_PARTICLE_PALETTES,
-      haptic: storage.getSettings().haptic !== false,
-    });
-    achievements.notifyMatchCleared(cells.length, depth);
-  };
-  cascade.onSpecialActivated = (act) => {
-    handleSpecialActivated(act, {
-      render, waves, bolts, particles,
-      palettes: GEM_PARTICLE_PALETTES, SPECIAL,
-      haptic: storage.getSettings().haptic !== false,
-    });
-  };
-  cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
-  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
-  cascade.onScoreChanged = (newScore, delta) => {
-    if (delta > 0 && lastClearCenter) {
-      spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
-        render.boardCenterX(), render.layout.hudY + 16);
-    }
-  };
-  cascade.onMoveCommitted = () => { movesLeft--; };
-  cascade.onIdleReached = () => {
-    if (movesLeft <= 0 && !resultTriggered) {
-      resultTriggered = true;
-      finalize();
-    }
-  };
+  wireCascadePresentation(cascade, {
+    onMoveCommitted: () => { movesLeft--; },
+    onIdleReached: () => {
+      if (movesLeft <= 0 && !resultTriggered) {
+        resultTriggered = true;
+        finalize();
+      }
+    },
+  });
 
   wakeLock.acquire();
 }

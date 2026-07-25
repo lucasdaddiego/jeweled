@@ -3,6 +3,7 @@
 import * as render from './render.js';
 import * as input from './input.js';
 import * as storage from './storage.js';
+import * as achievements from './achievements.js';
 import * as sound from './sound.js';
 import * as toasts from './toasts.js';
 import * as debugHud from './debugHud.js';
@@ -236,7 +237,10 @@ function setupVisibility() {
     // which would otherwise drop the session's most important write (end-of-run
     // best score / unlock). Idempotent with the pagehide handler — flush()
     // no-ops when nothing is dirty.
-    try { storage.flush(); } catch {}
+    try {
+      achievements.flushPlayTime();
+      storage.flush();
+    } catch {}
   });
 }
 
@@ -359,7 +363,10 @@ function init() {
   // the last ~250ms of changes (typical: end-of-run save) would be lost on
   // mobile when the user backgrounds the app.
   window.addEventListener('pagehide', () => {
-    try { storage.flush(); } catch {}
+    try {
+      achievements.flushPlayTime();
+      storage.flush();
+    } catch {}
   });
 
   lastFrameTime = performance.now();

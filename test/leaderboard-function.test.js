@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { onRequestGet, onRequestPost } from '../functions/api/leaderboard/[date].js';
 
 // Unit tests for the Cloudflare Pages Function behind /api/leaderboard/<date>.
@@ -38,6 +38,8 @@ class MiniResponse {
 }
 globalThis.Request ??= MiniRequest;
 globalThis.Response ??= MiniResponse;
+
+afterEach(() => vi.restoreAllMocks());
 
 // The function's POST accepts dates within ±36h of "now"; UTC-today is always
 // inside that window regardless of when/where the suite runs.
@@ -154,10 +156,14 @@ describe('onRequestGet', () => {
   });
 
   it('returns 500 when KV throws', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const kv = { get: async () => { throw new Error('kv down'); } };
     const res = await onRequestGet(getCtx({ kv }));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'internal error' });
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      operation: 'get', error: 'kv down', date: TODAY,
+    });
   });
 });
 
@@ -257,11 +263,19 @@ describe('onRequestPost', () => {
       }
     });
 
-    it.each(['2020-01-01', FUTURE, '2026-02-31'])(
+    it.each(['2020-01-01', FUTURE])(
       'rejects date %s outside the ±36h window', async (date) => {
         const res = await onRequestPost(postCtx({ name: 'Bob', score: 10 }, { date }));
         expect(res.status).toBe(400);
         expect(await res.json()).toEqual({ error: 'date out of range' });
+      },
+    );
+
+    it.each(['2026-02-29', '2026-02-31', '2026-04-31'])(
+      'rejects impossible calendar date %s before the submission window check', async (date) => {
+        const res = await onRequestPost(postCtx({ name: 'Bob', score: 10 }, { date }));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'bad date' });
       },
     );
 
@@ -322,15 +336,23 @@ describe('onRequestPost', () => {
   });
 
   it('returns 500 when KV get throws', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const kv = { get: async () => { throw new Error('kv down'); }, put: async () => {} };
     const res = await onRequestPost(postCtx({ name: 'Bob', score: 10 }, { kv }));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'internal error' });
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      operation: 'post', error: 'kv down', date: TODAY,
+    });
   });
 
   it('returns 500 when KV put throws', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const kv = { get: async () => null, put: async () => { throw new Error('kv full'); } };
     const res = await onRequestPost(postCtx({ name: 'Bob', score: 10 }, { kv }));
     expect(res.status).toBe(500);
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      operation: 'post', error: 'kv full', date: TODAY,
+    });
   });
 });

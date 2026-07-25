@@ -40,6 +40,7 @@ const en = {
   'common.nextLevel':  '▶ Next Level',
   'common.nextPuzzle': '▶ Next puzzle',
   'common.allPuzzles': '📋 All puzzles',
+  'common.reshuffling': 'Shuffling…',
   'common.copiedToClipboard': 'Copied to clipboard!',
 
   // Title scene
@@ -371,6 +372,7 @@ const es = {
   'common.nextLevel':  '▶ Siguiente nivel',
   'common.nextPuzzle': '▶ Siguiente puzzle',
   'common.allPuzzles': '📋 Todos los puzzles',
+  'common.reshuffling': 'Mezclando…',
   'common.copiedToClipboard': '¡Copiado al portapapeles!',
 
   // Title scene

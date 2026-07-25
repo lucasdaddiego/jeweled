@@ -7,6 +7,7 @@ import * as waves from './waves.js';
 import * as painting from './painting.js';
 import * as bolts from './bolts.js';
 import * as input from './input.js';
+import * as sound from './sound.js';
 import { counters, enabled as _dbgEnabled } from './debugHud.js';
 import { clockMs } from './main.js';
 
@@ -216,6 +217,7 @@ export function resize() {
 // thickness is interpreted as width on wide viewports and as height on narrow
 // ones — resize() decides orientation based on isNarrow.
 export function setPanelWidth(px) {
+  if (layout.panelSize === px) return;
   layout.panelSize = px;
   resize();
   buildAtlas();
@@ -254,9 +256,12 @@ function fluentUrl(name) {
 function loadFluent(emoji) {
   if (fluentCache.has(emoji)) return Promise.resolve(fluentCache.get(emoji));
   if (fluentInflight.has(emoji)) return fluentInflight.get(emoji);
-  if (fluentFailed.has(emoji)) return Promise.reject(new Error(`Fluent load previously failed for ${emoji}`));
+  // A real load failure is logged by the first caller. Later atlas rebuilds
+  // keep the OS fallback quietly instead of manufacturing a rejected promise
+  // (and duplicate warning) for the same known-bad asset.
+  if (fluentFailed.has(emoji)) return Promise.resolve(null);
   const name = FLUENT_NAME[emoji];
-  if (!name) return Promise.reject(new Error(`no Fluent mapping for ${emoji}`));
+  if (!name) return Promise.resolve(null);
   const p = new Promise((resolve, reject) => {
     const img = new Image();
     // No crossOrigin — assets are same-origin under icons/emoji/.
@@ -357,6 +362,7 @@ export function buildAtlas() {
       // to Fluent once the SVG arrives.
       drawEmojiFallback(actx, slotPx, i, emoji);
       loadFluent(emoji).then(img => {
+        if (!img) return; // expected OS fallback: this glyph has no local mapping
         if (atlas !== atlasAtBuild) return;
         // Clear the slot first so the fallback emoji doesn't bleed through
         // the SVG's transparent edges.
@@ -891,7 +897,11 @@ export function drawHitButton(x, y, w, h, label, onClick, buttons, cursorX, curs
   // a tactile shrink so the touch feels physical.
   const pressed = hover && input.isPointerDown();
   drawButton(x, y, w, h, label, { hover, pressed, ...opts });
-  buttons.push({ x, y, w, h, onClick, kind: opts.kind, modal: opts.modal });
+  const withTapSound = () => {
+    if (!opts.disabled) sound.uiTap();
+    return onClick();
+  };
+  buttons.push({ x, y, w, h, onClick: withTapSound, kind: opts.kind, modal: opts.modal });
 }
 
 export function drawButton(x, y, w, h, label, opts = {}) {

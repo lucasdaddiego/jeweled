@@ -50,6 +50,18 @@ describe('load()', () => {
     expect(s.zen.totalRunsPlayed).toBe(0);     // backfilled default
   });
 
+  it('restores populated nullable saveState objects after a fresh module load', async () => {
+    const zenSave = { grid: [[{ type: 1 }]], score: 4321, milestoneFloor: 3000 };
+    const classicSave = { grid: [[{ type: 2 }]], score: 987, level: 4, movesLeft: 12 };
+    const { storage } = await fresh(JSON.stringify({
+      version: 1,
+      zen: { saveState: zenSave },
+      classic: { saveState: classicSave },
+    }));
+    expect(storage.load().zen.saveState).toEqual(zenSave);
+    expect(storage.load().classic.saveState).toEqual(classicSave);
+  });
+
   it('treats a pre-versioned (missing version) blob as current and stamps it forward', async () => {
     const { storage, KEY, VERSION } = await fresh(JSON.stringify({ zen: { bestScore: 7 } }));
     const s = storage.load();

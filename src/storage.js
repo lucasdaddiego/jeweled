@@ -146,10 +146,16 @@ export function load() {
 function deepMerge(base, overlay) {
   // Missing overlay (null or undefined) → keep base.
   if (overlay == null) return base;
+  // `null` is also the schema's sentinel for optional values such as
+  // zen/classic saveState. A populated optional value can legitimately be an
+  // object, so it must replace the sentinel instead of being rejected as a
+  // type mismatch. Structured defaults still retain the corruption guard
+  // below (for example settings=null or settings="broken").
+  if (base === null) return overlay;
   // Type mismatch (base is a plain object but overlay is a scalar/array/null, or
   // vice versa): keep base. This prevents a corrupted localStorage value (e.g.
   // settings=null) from replacing a structured default and crashing callers.
-  const baseIsPlainObj = base !== null && typeof base === 'object' && !Array.isArray(base);
+  const baseIsPlainObj = typeof base === 'object' && !Array.isArray(base);
   const overlayIsPlainObj = typeof overlay === 'object' && !Array.isArray(overlay);
   if (baseIsPlainObj !== overlayIsPlainObj) return base;
   if (!baseIsPlainObj) return overlay; // both scalars or both arrays — overlay wins

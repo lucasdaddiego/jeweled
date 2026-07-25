@@ -207,7 +207,7 @@ function chainedHas(arr, r, c) {
 // guard, a bomb at countdown=1 inside the winning match gets decremented to 0,
 // nulled, and the player eats the explosion penalty instead of the defuse
 // bonus.
-export function tickBombs(grid, skip = null) {
+export function tickBombs(grid, skip = null, onTick = null) {
   const exploded = [];
   for (let r = 0; r < GRID; r++) {
     for (let c = 0; c < GRID; c++) {
@@ -215,6 +215,7 @@ export function tickBombs(grid, skip = null) {
       if (!cell || cell.special !== SPECIAL.TIME_BOMB || cell.bombCountdown === null) continue;
       if (skip && skip.has(`${r},${c}`)) continue;
       cell.bombCountdown--;
+      onTick?.({ r, c, cell });
       if (cell.bombCountdown <= 0) {
         exploded.push({ r, c, cell });
       }

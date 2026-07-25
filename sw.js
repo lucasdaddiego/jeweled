@@ -9,73 +9,15 @@
 const CACHE = 'gem-match-v34';
 
 const PRECACHE = [
+  // <generated-precache>
+  // Minimal source-tree fallback. scripts/generate-precache.mjs replaces this
+  // region in dist/sw.js with every published module and icon during build.
   '/',
   '/style.css',
   '/manifest.json',
   '/favicon.svg',
   '/src/main.js',
-  '/src/build.js',
-  '/src/sound.js',
-  '/src/leaderboard.js',
-  '/src/dailyMeta.js',
-  '/src/shareImage.js',
-  '/src/config.js',
-  '/src/grid.js',
-  '/src/matcher.js',
-  '/src/cascade.js',
-  '/src/specials.js',
-  '/src/animations.js',
-  '/src/particles.js',
-  '/src/floaters.js',
-  '/src/painting.js',
-  '/src/rng.js',
-  '/src/render.js',
-  '/src/input.js',
-  '/src/dragInput.js',
-  '/src/waves.js',
-  '/src/bolts.js',
-  '/src/debugHud.js',
-  '/src/i18n.js',
-  '/src/dialogs.js',
-  '/src/wakeLock.js',
-  '/src/powerups.js',
-  '/src/achievements.js',
-  '/src/toasts.js',
-  '/src/storage.js',
-  '/src/levels.js',
-  '/src/puzzles.js',
-  '/src/scenes/title.js',
-  '/src/scenes/levelSelect.js',
-  '/src/scenes/powerupOverlay.js',
-  '/src/scenes/sceneCommon.js',
-  '/src/scenes/gameZen.js',
-  '/src/scenes/gameClassic.js',
-  '/src/scenes/gameDaily.js',
-  '/src/scenes/gameBlitz.js',
-  '/src/scenes/gamePuzzle.js',
-  '/src/scenes/puzzleSelect.js',
-  '/src/scenes/stats.js',
-  '/src/scenes/result.js',
-  '/src/scenes/gempedia.js',
-  '/src/scenes/dailyHistory.js',
-  '/src/scenes/gallery.js',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable.png',
-  // Bundled Fluent emoji SVGs — the local glyphs rendered by the game, served
-  // from this origin so first-load needs no CDN and offline play can use them.
-  '/icons/emoji/red_square_color.svg',
-  '/icons/emoji/blue_square_color.svg',
-  '/icons/emoji/green_square_color.svg',
-  '/icons/emoji/yellow_square_color.svg',
-  '/icons/emoji/purple_square_color.svg',
-  '/icons/emoji/white_large_square_color.svg',
-  '/icons/emoji/black_large_square_color.svg',
-  '/icons/emoji/collision_color.svg',
-  '/icons/emoji/fire_color.svg',
-  '/icons/emoji/high_voltage_color.svg',
-  '/icons/emoji/star_color.svg',
-  '/icons/emoji/joker_color.svg',
+  // </generated-precache>
 ];
 
 // Whitelist of URL prefixes we cache opportunistically on fetch. Anything
@@ -146,18 +88,25 @@ self.addEventListener('fetch', e => {
   // We also skip caching redirected responses: same-origin 30x followed by a
   // 200 would otherwise be cached as the redirect, replaying the redirect
   // offline indefinitely.
+  // Split response delivery from cache persistence. Both branches share the
+  // same fetch promise, while waitUntil() is registered synchronously during
+  // event dispatch (calling it later from a `.then` can be rejected after the
+  // event's active phase).
+  const networkResponse = fetch(e.request).then(resp => {
+    if (!resp || !resp.ok) throw new Error('bad-response');
+    return resp;
+  });
+  const cacheUpdate = networkResponse
+    .then(resp => {
+      if (resp.redirected || resp.type === 'opaqueredirect' || !isCacheable(url.pathname)) return null;
+      const copy = resp.clone();
+      return caches.open(CACHE).then(c => c.put(e.request, copy));
+    })
+    .catch(() => { /* network/quota failure — next online load will retry */ });
+  e.waitUntil(cacheUpdate);
+
   e.respondWith(
-    fetch(e.request)
-      .then(resp => {
-        if (!resp || !resp.ok) throw new Error('bad-response');
-        if (!resp.redirected && resp.type !== 'opaqueredirect' && isCacheable(url.pathname)) {
-          const copy = resp.clone();
-          caches.open(CACHE)
-            .then(c => c.put(e.request, copy))
-            .catch(() => { /* quota or other; ignore — next load will retry */ });
-        }
-        return resp;
-      })
+    networkResponse
       .catch(() => caches.match(e.request).then(r => {
         if (r) return r;
         // Offline and this exact URL wasn't cached. For a navigation, fall back

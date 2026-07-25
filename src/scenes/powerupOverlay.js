@@ -70,7 +70,7 @@ export function setMilestoneFloor(floor) {
 export function getPendingMilestones() { return pendingMilestones; }
 export function setPendingMilestones(n) {
   pendingMilestones = Math.max(0, n | 0);
-  if (pendingMilestones > 0 && powerups.hasAvailableSlot()) milestonePopup = true;
+  milestonePopup = pendingMilestones > 0 && powerups.hasAvailableSlot();
 }
 
 export function isModalOpen() {

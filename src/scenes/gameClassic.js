@@ -3,9 +3,6 @@
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
-import * as particles from '../particles.js';
-import * as waves from '../waves.js';
-import * as bolts from '../bolts.js';
 import * as drag from '../dragInput.js';
 import * as powerups from '../powerups.js';
 import * as wakeLock from '../wakeLock.js';
@@ -13,19 +10,18 @@ import * as achievements from '../achievements.js';
 import * as overlay from './powerupOverlay.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
+import {
+  tickEffects, tickHint, clearEffects, drawHintButton, wireCascadePresentation,
+} from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard, deserializeGrid, serializeGrid } from '../grid.js';
-import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
 import { setScene, clockMs } from '../main.js';
 import { SPECIAL } from '../config.js';
 import { LEVELS, getLevel, starsFor } from '../levels.js';
-import { GEM_PARTICLE_PALETTES } from '../render.js';
 
 let grid = null;
 let cascade = null;
 let hint = null;
-let lastClearCenter = null;
 // (wakeLock state lives in the wakeLock module — single module-level handle)
 let buttons = [];
 let cursorX = 0, cursorY = 0;
@@ -77,11 +73,14 @@ function captureIdle() {
   return {
     grid: serializeGrid(grid), score: cascade.score, movesLeft, milestoneFloor,
     ice: remainingIceCells(),
+    pendingMilestones: overlay.getPendingMilestones(),
+    charges: { ...powerups.getCharges() },
   };
 }
 
 function applyUndo() {
   if (!prevIdle || !cascade || cascade.state !== STATE.IDLE || resultTriggered) return false;
+  if ((prevIdle.charges?.undo ?? 0) <= 0) return false;
   const g2 = deserializeGrid(prevIdle.grid);
   for (let r = 0; r < g2.length; r++) {
     for (let c = 0; c < g2[r].length; c++) grid[r][c] = g2[r][c];
@@ -90,8 +89,10 @@ function applyUndo() {
   cascade.scoreShown = prevIdle.score;
   movesLeft = prevIdle.movesLeft;
   milestoneFloor = prevIdle.milestoneFloor;
+  storage.saveKey('powerups', { charges: { ...prevIdle.charges } });
   if (prevIdle.ice) initIce(getLevel(levelNum), prevIdle.ice);
   overlay.setMilestoneFloor(milestoneFloor);
+  overlay.setPendingMilestones(prevIdle.pendingMilestones || 0);
   curIdle = prevIdle;
   prevIdle = null;
   snapshotSaveState();
@@ -150,51 +151,34 @@ export function enter(args = {}) {
   render.setPanelWidth(render.layout.isNarrow ? 76 : 72);
   if (entryAnim) cascade.playEntryAnimation();
 
-  cascade.onMatchCleared = (cells, depth) => {
-    lastClearCenter = handleMatchCleared(cells, depth, {
-      render, particles, waves,
-      palettes: GEM_PARTICLE_PALETTES,
-      haptic: storage.getSettings().haptic !== false,
-    });
-    for (const cell of cells) meltIceAt(cell.r, cell.c);
-    achievements.notifyMatchCleared(cells.length, depth);
-  };
-  cascade.onSpecialActivated = (act) => {
-    handleSpecialActivated(act, {
-      render, waves, bolts, particles,
-      palettes: GEM_PARTICLE_PALETTES, SPECIAL,
-      haptic: storage.getSettings().haptic !== false,
-    });
-    meltIceAt(act.r, act.c);
-    for (const t of act.targets || []) meltIceAt(t.r, t.c);
-  };
-  cascade.onMoveCommitted = () => {
-    prevIdle = curIdle;   // capture the pre-move board for the undo power-up
-    movesLeft--;
-  };
-  cascade.onBombExploded = () => { movesLeft = Math.max(0, movesLeft - 5); };
-  // Every other mode wires this; without it the special_* achievements could
-  // never progress in the game's main mode.
-  cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
-  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
-  cascade.onIdleReached = () => {
-    curIdle = captureIdle();
-    snapshotSaveState();
-    checkWinLose();
-  };
+  wireCascadePresentation(cascade, {
+    onMatchCleared: (cells) => {
+      for (const cell of cells) meltIceAt(cell.r, cell.c);
+    },
+    onSpecialActivated: (act) => {
+      meltIceAt(act.r, act.c);
+      for (const t of act.targets || []) meltIceAt(t.r, t.c);
+    },
+    onMoveCommitted: () => {
+      prevIdle = curIdle;   // capture the pre-move board for the undo power-up
+      movesLeft--;
+    },
+    onBombExploded: () => { movesLeft = Math.max(0, movesLeft - 5); },
+    onIdleReached: () => {
+      curIdle = captureIdle();
+      snapshotSaveState();
+      checkWinLose();
+    },
+    onScoreChanged: (newScore) => {
+      const earned = powerups.consumeRunMilestones(newScore, milestoneFloor);
+      milestoneFloor = earned.floor;
+      overlay.setMilestoneFloor(milestoneFloor);
+      overlay.notifyMilestoneEarned(earned.count);
+    },
+  });
   prevIdle = null;
   curIdle = captureIdle();
   overlay.setUndoHandler(applyUndo);
-  cascade.onScoreChanged = (newScore, delta) => {
-    if (delta > 0 && lastClearCenter) {
-      spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
-        render.boardCenterX(), render.layout.hudY + 16);
-    }
-    const earned = powerups.consumeRunMilestones(newScore, milestoneFloor);
-    milestoneFloor = earned.floor;
-    overlay.setMilestoneFloor(milestoneFloor);
-    overlay.notifyMilestoneEarned(earned.count);
-  };
 
   wakeLock.acquire();
 }

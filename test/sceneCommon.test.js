@@ -5,7 +5,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // cooldown clock is controllable per test.
 vi.mock('../src/main.js', () => ({ clockMs: vi.fn(() => 0), setScene: vi.fn() }));
 
-import { tickEffects, clearEffects, tickHint, drawHintButton } from '../src/scenes/sceneCommon.js';
+import {
+  tickEffects, clearEffects, tickHint, drawHintButton, wireCascadePresentation,
+} from '../src/scenes/sceneCommon.js';
 import { clockMs } from '../src/main.js';
 import * as render from '../src/render.js';
 import * as achievements from '../src/achievements.js';
@@ -13,6 +15,7 @@ import * as particles from '../src/particles.js';
 import * as floaters from '../src/floaters.js';
 import * as waves from '../src/waves.js';
 import * as bolts from '../src/bolts.js';
+import * as sound from '../src/sound.js';
 import { STATE } from '../src/cascade.js';
 import { TIMING } from '../src/config.js';
 import { createBoard, findModestHint } from '../src/grid.js';
@@ -74,6 +77,42 @@ describe('clearEffects', () => {
     expect(fxOps()).toBeGreaterThan(0);
     clearEffects();
     expect(fxOps()).toBe(0);
+  });
+});
+
+describe('wireCascadePresentation', () => {
+  it('installs shared achievement, score, bomb-audio, and mode hooks', () => {
+    const cascade = {};
+    const onMatchCleared = vi.fn();
+    const onScoreChanged = vi.fn();
+    const onBombExploded = vi.fn();
+    const onReshuffle = vi.fn();
+    const tick = vi.spyOn(sound, 'bombTick');
+    const boom = vi.spyOn(sound, 'bombBoom');
+    const achievementsSpy = vi.spyOn(achievements, 'notifyMatchCleared');
+
+    wireCascadePresentation(cascade, {
+      onMatchCleared,
+      onScoreChanged,
+      onBombExploded,
+      onReshuffle,
+    });
+    cascade.onMatchCleared([{ r: 0, c: 0, type: 0 }], 2);
+    cascade.onScoreChanged(100, 100);
+    cascade.onBombTick();
+    cascade.onBombExploded({ r: 1, c: 2 });
+    cascade.onReshuffle();
+
+    expect(achievementsSpy).toHaveBeenCalledWith(1, 2);
+    expect(onMatchCleared).toHaveBeenCalledWith(
+      expect.any(Array), 2, expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
+    expect(onScoreChanged).toHaveBeenCalledWith(100, 100, expect.any(Object));
+    expect(tick).toHaveBeenCalledOnce();
+    expect(boom).toHaveBeenCalledOnce();
+    expect(onBombExploded).toHaveBeenCalledWith({ r: 1, c: 2 });
+    expect(onReshuffle).toHaveBeenCalledOnce();
+    expect(fxOps()).toBeGreaterThan(0);
   });
 });
 

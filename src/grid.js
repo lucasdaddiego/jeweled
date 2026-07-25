@@ -3,6 +3,22 @@
 import { GRID, TYPES, SPECIAL, SPAWN_RATES, TIME_BOMB_START } from './config.js';
 import { findMatches, wouldSwapMatch, analyzeSwapShape } from './matcher.js';
 
+// Emergency board used only after every randomized reshuffle/retype attempt
+// fails. It contains no starting matches and has at least one valid move.
+// Applying it to the existing cell objects preserves identity; special flags
+// are kept when possible, then cleared only if a pathological special layout
+// still prevents the invariant from holding.
+const PLAYABLE_FALLBACK_TYPES = [
+  [2, 5, 6, 1, 1, 3, 4, 2],
+  [4, 2, 1, 2, 5, 5, 6, 6],
+  [5, 1, 0, 6, 2, 5, 3, 6],
+  [1, 6, 3, 2, 2, 3, 2, 3],
+  [1, 5, 1, 0, 3, 1, 0, 4],
+  [0, 2, 0, 2, 1, 2, 6, 2],
+  [4, 4, 3, 3, 1, 4, 0, 0],
+  [1, 4, 0, 4, 2, 3, 1, 1],
+];
+
 // Cell shape: { type: 0..TYPES-1, special: SPECIAL.*, bombCountdown: null | int, id: int }
 let nextId = 1;
 export function newCell(type, special = SPECIAL.NONE, bombCountdown = null) {
@@ -144,8 +160,8 @@ export function spawnNew(g, rng = Math.random, direction = 'down', opts = null) 
 }
 
 // Iterate spawned cells; for each, try every other type. Keep the first change
-// that makes the board solvable. If no single retype works (very rare), leave
-// the board as-is — the matcher will run again on the next cycle.
+// that makes the board solvable. If no single retype works, the cascade's
+// post-spawn invariant check performs a full bounded reshuffle.
 function biasSpawnsToSolvable(g, spawns) {
   if (spawns.length === 0) return;
   if (hasAnyValidMove(g)) return;
@@ -251,7 +267,10 @@ function isColorBombSwap(g, a, b) {
       || g[b.r]?.[b.c]?.special === SPECIAL.COLOR_BOMB;
 }
 
-// Reshuffle while preserving the multiset of gems. Bounded.
+// Reshuffle while preserving the multiset of gems when possible. Bounded.
+// Returns true only once the board has no pre-existing matches and at least
+// one valid move. The deterministic final fallback makes that invariant
+// independent of a hostile/degenerate RNG.
 export function reshuffle(g, rng = Math.random) {
   const flat = [];
   for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) flat.push(g[r][c]);
@@ -263,7 +282,7 @@ export function reshuffle(g, rng = Math.random) {
     }
     let i = 0;
     for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) g[r][c] = flat[i++];
-    if (findMatches(g, null).cleared.size === 0 && hasAnyValidMove(g)) return;
+    if (findMatches(g, null).cleared.size === 0 && hasAnyValidMove(g)) return true;
   }
   // Fallback — full re-randomize, preserving any special gems.
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -273,7 +292,34 @@ export function reshuffle(g, rng = Math.random) {
         cell.type = pickTypeNoMatch(g, r, c, rng);
       }
     }
-    if (findMatches(g, null).cleared.size === 0 && hasAnyValidMove(g)) return;
+    if (findMatches(g, null).cleared.size === 0 && hasAnyValidMove(g)) return true;
+  }
+
+  applyPlayableFallback(g, false);
+  if (findMatches(g, null).cleared.size === 0 && hasAnyValidMove(g)) return true;
+
+  // A board packed with wildcard-like specials can change matcher semantics.
+  // This is an emergency recovery from an otherwise permanent input dead-end,
+  // so playability wins over retaining those rare special flags.
+  applyPlayableFallback(g, true);
+  return findMatches(g, null).cleared.size === 0 && hasAnyValidMove(g);
+}
+
+function applyPlayableFallback(g, clearSpecials) {
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      let cell = g[r][c];
+      if (!cell) {
+        cell = newCell(PLAYABLE_FALLBACK_TYPES[r][c]);
+        g[r][c] = cell;
+      } else {
+        cell.type = PLAYABLE_FALLBACK_TYPES[r][c];
+      }
+      if (clearSpecials) {
+        cell.special = SPECIAL.NONE;
+        cell.bombCountdown = null;
+      }
+    }
   }
 }
 

@@ -502,6 +502,9 @@ describe('undo power-up', () => {
   });
 
   it('undo is refused while the cascade is mid-animation (no committed move burned)', () => {
+    storage.saveKey('powerups', {
+      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 1 },
+    });
     const setUndo = vi.spyOn(overlay, 'setUndoHandler');
     zen.enter({ restoreFrom: { grid: plantedSerial(), score: 0, milestoneFloor: 0 } });
     const undoFn = setUndo.mock.calls[0][0];
@@ -511,6 +514,38 @@ describe('undo power-up', () => {
     expect(undoFn()).toBe(false);                       // not idle -> refused
     c.state = STATE.IDLE;
     expect(undoFn()).toBe(true);                        // same rewind succeeds once idle
+  });
+
+  it('rewinds milestone rewards and refuses a charge earned by the undone move', () => {
+    storage.saveKey('powerups', {
+      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 1 },
+    });
+    const setUndo = vi.spyOn(overlay, 'setUndoHandler');
+    zen.enter({ restoreFrom: { grid: plantedSerial(), score: 0, milestoneFloor: 0 } });
+    const undoFn = setUndo.mock.calls[0][0];
+    const c = debugHud.activeCascade();
+    c.onMoveCommitted();
+
+    storage.saveKey('powerups', {
+      charges: { shuffle: 1, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 1 },
+    });
+    overlay.setPendingMilestones(1);
+    expect(undoFn()).toBe(true);
+    expect(storage.load().powerups.charges).toMatchObject({ shuffle: 0, undo: 1 });
+    expect(overlay.getPendingMilestones()).toBe(0);
+
+    // A run that had no Undo charge before its move cannot use an Undo charge
+    // earned by that same move to pay for the rewind.
+    storage.saveKey('powerups', {
+      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 0 },
+    });
+    zen.enter({ restoreFrom: { grid: plantedSerial(), score: 0, milestoneFloor: 0 } });
+    const secondUndo = setUndo.mock.calls.at(-1)[0];
+    debugHud.activeCascade().onMoveCommitted();
+    storage.saveKey('powerups', {
+      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 1 },
+    });
+    expect(secondUndo()).toBe(false);
   });
 });
 

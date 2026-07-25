@@ -3,25 +3,23 @@
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
-import * as particles from '../particles.js';
-import * as waves from '../waves.js';
-import * as bolts from '../bolts.js';
 import * as drag from '../dragInput.js';
 import * as sound from '../sound.js';
 import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
+import {
+  tickEffects, tickHint, clearEffects, drawHintButton, wireCascadePresentation,
+} from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard } from '../grid.js';
-import { spawnScore, spawnText, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
+import { spawnText } from '../floaters.js';
 import { setScene, clockMs } from '../main.js';
 import {
   BLITZ_DURATION_MS, SPECIAL, BLITZ_TIME_PLUS_RATE, BLITZ_TIME_PLUS_BONUS_MS,
   BLITZ_STREAK_WINDOW_MS, BLITZ_STREAK_MAX, BLITZ_STREAK_BONUS,
 } from '../config.js';
-import { GEM_PARTICLE_PALETTES } from '../render.js';
 
 let grid = null;
 let cascade = null;
@@ -30,7 +28,6 @@ let buttons = [];
 let cursorX = 0, cursorY = 0;
 let timeLeftMs = 0;
 let resultTriggered = false;
-let lastClearCenter = null;
 let lastTickSecond = 0;   // last sub-10s second we played the countdown tick for
 // Speed streak: consecutive moves committed within the window build it up.
 let streak = 0;
@@ -58,50 +55,31 @@ export function enter() {
   render.setPanelWidth(0);
   cascade.playEntryAnimation();
 
-  cascade.onMatchCleared = (cells, depth) => {
-    lastClearCenter = handleMatchCleared(cells, depth, {
-      render, particles, waves,
-      palettes: GEM_PARTICLE_PALETTES,
-      haptic: storage.getSettings().haptic !== false,
-    });
-    // TIME_PLUS gems in the clear grant clock time — the whole point of them.
-    const timeGems = cells.filter(c => c.special === SPECIAL.TIME_PLUS).length;
-    if (timeGems > 0 && !resultTriggered) {
-      timeLeftMs = Math.min(BLITZ_DURATION_MS, timeLeftMs + timeGems * BLITZ_TIME_PLUS_BONUS_MS);
-      spawnText(lastClearCenter.x, lastClearCenter.y - 60,
-        i18n.t('blitz.timeBonus', { n: (timeGems * BLITZ_TIME_PLUS_BONUS_MS) / 1000 }),
-        '#4dd0e1', 22);
-    }
-    achievements.notifyMatchCleared(cells.length, depth);
-  };
-  cascade.onMoveCommitted = () => {
-    // Speed streak: chain moves quickly to build it; each level past 1 pays a
-    // flat bonus. Resets when the gap exceeds the window.
-    const now = clockMs();
-    streak = (now - lastMoveAt) <= BLITZ_STREAK_WINDOW_MS ? Math.min(BLITZ_STREAK_MAX, streak + 1) : 1;
-    lastMoveAt = now;
-    if (streak >= 2) {
-      const bonus = (streak - 1) * BLITZ_STREAK_BONUS;
-      cascade.score += bonus;
-      spawnText(render.boardCenterX(), render.layout.boardY + 24,
-        i18n.t('blitz.streak', { n: streak }), '#ffd166', 18);
-    }
-  };
-  cascade.onSpecialActivated = (act) => {
-    handleSpecialActivated(act, {
-      render, waves, bolts, particles,
-      palettes: GEM_PARTICLE_PALETTES, SPECIAL,
-      haptic: storage.getSettings().haptic !== false,
-    });
-  };
-  cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
-  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
-  cascade.onScoreChanged = (newScore, delta) => {
-    if (delta > 0 && lastClearCenter) {
-      spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
-        render.boardCenterX(), render.layout.hudY + 16);
-    }
-  };
+  wireCascadePresentation(cascade, {
+    onMatchCleared: (cells, _depth, center) => {
+      // TIME_PLUS gems in the clear grant clock time — the whole point of them.
+      const timeGems = cells.filter(c => c.special === SPECIAL.TIME_PLUS).length;
+      if (timeGems > 0 && !resultTriggered) {
+        timeLeftMs = Math.min(BLITZ_DURATION_MS, timeLeftMs + timeGems * BLITZ_TIME_PLUS_BONUS_MS);
+        spawnText(center.x, center.y - 60,
+          i18n.t('blitz.timeBonus', { n: (timeGems * BLITZ_TIME_PLUS_BONUS_MS) / 1000 }),
+          '#4dd0e1', 22);
+      }
+    },
+    onMoveCommitted: () => {
+      // Speed streak: chain moves quickly to build it; each level past 1 pays a
+      // flat bonus. Resets when the gap exceeds the window.
+      const now = clockMs();
+      streak = (now - lastMoveAt) <= BLITZ_STREAK_WINDOW_MS ? Math.min(BLITZ_STREAK_MAX, streak + 1) : 1;
+      lastMoveAt = now;
+      if (streak >= 2) {
+        const bonus = (streak - 1) * BLITZ_STREAK_BONUS;
+        cascade.score += bonus;
+        spawnText(render.boardCenterX(), render.layout.boardY + 24,
+          i18n.t('blitz.streak', { n: streak }), '#ffd166', 18);
+      }
+    },
+  });
 
   wakeLock.acquire();
 }

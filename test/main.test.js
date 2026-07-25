@@ -34,6 +34,7 @@ const h = vi.hoisted(() => {
     },
     input: { setup: vi.fn(), on: vi.fn(), isPointerDown: vi.fn(() => false) },
     storage: { load: vi.fn(), flush: vi.fn(), getSettings: vi.fn(() => ({ sound: true, gemStyle: 'color' })) },
+    achievements: { flushPlayTime: vi.fn() },
     toasts: { update: vi.fn(), draw: vi.fn() },
     i18n: { init: vi.fn(), setLanguage: vi.fn(), getLocale: vi.fn(() => 'en'), t: vi.fn((k) => k) },
     dialogs: {
@@ -52,6 +53,7 @@ const h = vi.hoisted(() => {
 vi.mock('../src/render.js', () => h.render);
 vi.mock('../src/input.js', () => h.input);
 vi.mock('../src/storage.js', () => h.storage);
+vi.mock('../src/achievements.js', () => h.achievements);
 vi.mock('../src/toasts.js', () => h.toasts);
 vi.mock('../src/i18n.js', () => h.i18n);
 vi.mock('../src/dialogs.js', () => h.dialogs);
@@ -133,6 +135,7 @@ describe('init (auto-runs on import; jsdom readyState=complete, hostname=localho
   it('flushes storage on pagehide', async () => {
     await boot();
     window.dispatchEvent(new Event('pagehide'));
+    expect(h.achievements.flushPlayTime).toHaveBeenCalled();
     expect(h.storage.flush).toHaveBeenCalled();
   });
 

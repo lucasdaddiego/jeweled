@@ -49,18 +49,22 @@ afterEach(() => {
   try { Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }); } catch { /* ignore */ }
 });
 
-// --- geometry helpers (mirror result.draw's button stacking) ---
-// Subtitle is N lines, each row +40 from y0 = H*0.30 + 60.
-function firstActionCenter(nLines) {
-  const y = H * 0.30 + 60 + 40 * nLines;
-  const ay = y + 30;
-  return { x: W / 2, y: ay + 25 }; // btnH=50 -> center +25
+// --- geometry helpers (use the same pure layout function as result.draw) ---
+function actionCenter(nLines, actionCount, index = 0) {
+  const box = result.computeResultLayout({
+    w: W, h: H, subtitleLines: nLines, actionCount,
+  });
+  return {
+    x: W / 2,
+    y: box.buttonsY + index * (box.buttonH + box.buttonGap) + box.buttonH / 2,
+  };
+}
+function firstActionCenter(nLines, actionCount = 2) {
+  return actionCenter(nLines, actionCount, 0);
 }
 function titleCenter(nLines, hasAction) {
-  const y = H * 0.30 + 60 + 40 * nLines;
-  let ay = y + 30;
-  if (hasAction) ay += 50 + 14; // one action button above (btnH + gap)
-  return { x: W / 2, y: ay + 25 };
+  const actionCount = hasAction ? 2 : 1;
+  return actionCenter(nLines, actionCount, actionCount - 1);
 }
 const down = (x, y) => result.onPointer({ type: 'down', x, y });
 const ctxCalls = () => render.ctxRef().__calls;
@@ -101,6 +105,29 @@ describe('result: lifecycle + default/unknown mode', () => {
     result.onPointer({ type: 'up', x: W / 2, y: firstActionCenter(1).y });
     result.onPointer({ type: 'move', x: 0, y: 0 });
     expect(setScene).not.toHaveBeenCalled();
+  });
+});
+
+describe('result: responsive geometry', () => {
+  it.each([
+    [320, 568],
+    [360, 640],
+    [800, 600],
+  ])('keeps the worst-case Daily stack inside %d×%d', (w, h) => {
+    const box = result.computeResultLayout({
+      w,
+      h,
+      safeTop: 0,
+      subtitleLines: 3,
+      actionCount: 3,
+      leaderboardRows: 5,
+      hasRank: true,
+    });
+    expect(box.titleY).toBeGreaterThanOrEqual(12);
+    expect(box.buttonX).toBeGreaterThanOrEqual(16);
+    expect(box.buttonX + box.buttonW).toBeLessThanOrEqual(w - 16);
+    expect(box.leaderboardY).toBeGreaterThan(box.buttonsY);
+    expect(box.bottom).toBeLessThanOrEqual(h - 12);
   });
 });
 
@@ -190,7 +217,7 @@ describe('result: daily mode', () => {
     setShare(share);
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
-    const a = firstActionCenter(2);
+    const a = firstActionCenter(2, 3);
     down(a.x, a.y);
     await tick();
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ title: 'Jeweled' }));
@@ -201,7 +228,7 @@ describe('result: daily mode', () => {
     setClipboard({ writeText });
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
-    const a = firstActionCenter(2);
+    const a = firstActionCenter(2, 3);
     down(a.x, a.y);
     await tick();
     expect(writeText).toHaveBeenCalled();
@@ -212,7 +239,7 @@ describe('result: daily mode', () => {
     // both undefined (afterEach/default)
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
-    const a = firstActionCenter(2);
+    const a = firstActionCenter(2, 3);
     expect(() => down(a.x, a.y)).not.toThrow();
     await tick();
     expect(dialogs.alert).not.toHaveBeenCalled();
@@ -223,7 +250,7 @@ describe('result: daily mode', () => {
     setShare(share);
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
-    const a = firstActionCenter(2);
+    const a = firstActionCenter(2, 3);
     expect(() => down(a.x, a.y)).not.toThrow();
     await tick();
     expect(share).toHaveBeenCalled();
@@ -245,8 +272,8 @@ describe('result: daily mode', () => {
     result.enter({ mode: 'daily', score: 10, date: '2026-06-26', isNewBest: true });
     result.draw();
     expect(drewText('📆 History')).toBe(true);
-    const a = firstActionCenter(2);
-    down(a.x, a.y + 64);                       // second action row (btnH 50 + gap 14)
+    const a = actionCenter(2, 3, 1);
+    down(a.x, a.y);
     expect(setScene).toHaveBeenCalledExactlyOnceWith('dailyHistory');
   });
 });
@@ -345,7 +372,7 @@ describe('result: shareCard outcomes', () => {
     shareCard.mockResolvedValueOnce('copied');
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true, streak: 2, movesUsed: 21 });
     result.draw();
-    const a = firstActionCenter(3);               // streak adds a 3rd subtitle line
+    const a = firstActionCenter(3, 3);             // streak adds a 3rd subtitle line
     down(a.x, a.y);
     await tick();
     // The card carries the branded title/footer + the streak line, and the
@@ -365,7 +392,7 @@ describe('result: shareCard outcomes', () => {
     shareCard.mockResolvedValueOnce('shared-image');
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
-    const a = firstActionCenter(2);
+    const a = firstActionCenter(2, 3);
     down(a.x, a.y);
     await tick();
     expect(shareCard).toHaveBeenCalled();

@@ -1,6 +1,6 @@
 # Reusable CI test job: install the pinned toolchain, fail fast on i18n
 # regressions, syntax-check every source file, then run the Vitest suite with
-# the 100% coverage gate (thresholds live in vitest.config.js). Called by
+# the high-coverage gate (thresholds live in vitest.config.js). Called by
 # ci.yml (pull requests + feature branches) and by deploy.yml as the gate that
 # must pass before anything ships to production.
 name: Test
@@ -44,6 +44,12 @@ jobs:
       # branches >= 98%), so this step fails the build on a real regression.
       - name: Unit tests + coverage gate
         run: npm run coverage
+
+      # Exercise the Pages Function inside workerd with a real local KV binding.
+      # Direct jsdom unit tests remain useful for exhaustive validation branches;
+      # this catches platform/runtime and binding integration mistakes.
+      - name: Workers runtime integration tests
+        run: npm run test:workers
 
   # Real-browser smoke test: boots the app in headless Chromium via
   # test-e2e/smoke.spec.mjs (plain Playwright library, no runner/config) and

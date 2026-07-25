@@ -182,10 +182,18 @@ const PLAYTIME_FLUSH_MS = 15_000;
 export function addPlayTimeMs(ms) {
   _pendingPlayMs += ms;
   if (_pendingPlayMs >= PLAYTIME_FLUSH_MS) {
-    const chunk = _pendingPlayMs;
-    _pendingPlayMs = 0;
-    bumpCounter('timePlayedMs', chunk);
+    flushPlayTime();
   }
+}
+
+// Persist the sub-15-second remainder when the page is hidden or discarded.
+// Keeping this separate from storage.flush() avoids coupling the storage
+// module back to achievements while still giving main.js one lifecycle hook.
+export function flushPlayTime() {
+  if (_pendingPlayMs <= 0) return;
+  const chunk = _pendingPlayMs;
+  _pendingPlayMs = 0;
+  bumpCounter('timePlayedMs', chunk);
 }
 
 export function notifyLevelWin(level) {

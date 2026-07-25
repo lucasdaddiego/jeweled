@@ -4,7 +4,10 @@
 // no `setTimeout`. All animations are time-accumulated.
 
 import { GRID, SPECIAL, TIMING, SLOWMO_FACTOR, SLOWMO_MIN_DEPTH, SHAKE_MIN_DEPTH, SCORE, COIN_MULTIPLIER, STAR_CASCADE_TRIGGER, BIG_WAVE_AREA_BOMB, BIG_WAVE_COLOR_BOMB } from './config.js';
-import { swap as gridSwap, applyGravity, spawnNew, areAdjacent, newCell } from './grid.js';
+import {
+  swap as gridSwap, applyGravity, spawnNew, areAdjacent, newCell,
+  hasAnyValidMove, reshuffle,
+} from './grid.js';
 import { findMatches, wouldSwapMatch } from './matcher.js';
 import { activate as activateSpecial, tickBombs, scoreForClear } from './specials.js';
 import { Tween, easings } from './animations.js';
@@ -66,6 +69,7 @@ export class Cascade {
     this.onSpecialSpawned = null; // (special: SPECIAL.*) => void — once per match-promoted spawn
     this.onSpecialActivated = null; // ({r, c, special}) => void
     this.onBombExploded   = null; // (cell:{r,c}) => void  — Classic: deduct 5 moves
+    this.onBombTick       = null; // ()=>void — at least one live bomb counted down
     this.onBombsDefused   = null; // (count) => void — bombs cleared before detonating
     this.onMoveCommitted  = null; // ()=>void  — called once per valid swap (scenes track their own movesLeft)
     this.onIdleReached    = null; // ()=>void  — for save-state snapshot trigger
@@ -678,7 +682,9 @@ export class Cascade {
     // the same fall step.
     if (this._bombTickPending) {
       this._bombTickPending = false;
-      const exploded = tickBombs(this.grid);
+      let bombTicked = false;
+      const exploded = tickBombs(this.grid, null, () => { bombTicked = true; });
+      if (bombTicked) this.onBombTick?.();
       for (const e of exploded) {
         this.onBombExploded?.(e);
         this.grid[e.r][e.c] = null;
@@ -720,9 +726,14 @@ export class Cascade {
       this._beginResolve(cleared, toSpawn);
       return;
     }
-    // No more matches — back to IDLE. We don't reshuffle in Zen anymore:
-    // spawnNew has already biased a new gem's type to guarantee a valid move
-    // exists. The board layout the player sees is the same one that fell in.
+    // No more matches. The cheap spawn bias normally guarantees a move, but
+    // special spawns and pathological layouts can defeat a single-cell
+    // retype. Enforce the invariant here at the last boundary before input is
+    // re-enabled so no mode can enter an unplayable IDLE dead-end.
+    if (!hasAnyValidMove(this.grid)) {
+      reshuffle(this.grid, this.rng);
+      this.onReshuffle?.();
+    }
     this.state = STATE.IDLE;
     this.onIdleReached?.();
   }

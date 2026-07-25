@@ -2,8 +2,8 @@
 //
 //   node test-e2e/smoke.spec.mjs
 //
-// Self-contained on purpose: it starts its own static server (no dependency on
-// `serve` or any config), launches headless Chromium via the plain `playwright`
+// Self-contained on purpose: npm's test:e2e script first builds dist/, then
+// this starts its own static server, launches Chromium via the plain `playwright`
 // library (NOT the @playwright/test runner), drives the app through the
 // localhost-only `window.__game` debug hook, and exits non-zero on any failure.
 // It lives outside test/ and uses .mjs so the Vitest suite (include:
@@ -16,7 +16,8 @@
 //   4. Scene switch via __game.setScene('gameZen') settles to cascade IDLE
 //      (entry animation completes) and back to title cleans up window.__zen.
 //   5. The save file lands in localStorage under 'gem-match:v1'.
-//   6. Zero console errors and zero uncaught page errors across all of it.
+//   6. The generated service-worker manifest supports a complete offline reload.
+//   7. Zero console errors and zero uncaught page errors across all of it.
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -24,10 +25,10 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 
 // ---------------------------------------------------------------------------
-// Tiny hermetic static server (repo root, correct MIME types, no caching).
+// Tiny hermetic static server (built dist/, correct MIME types, no caching).
 // ---------------------------------------------------------------------------
 
 const MIME = {
@@ -201,6 +202,26 @@ async function main() {
     assert(stored != null, "localStorage key 'gem-match:v1' exists");
     assert(typeof JSON.parse(stored) === 'object', "'gem-match:v1' contains parseable JSON");
     step(`localStorage 'gem-match:v1' persisted (${stored.length} bytes)`);
+
+    // --- Offline reload --------------------------------------------------------
+    // build.sh generated the full precache manifest from dist/. Wait until the
+    // claiming worker controls this page, disable the network, and prove the
+    // whole module graph boots from CacheStorage rather than merely checking
+    // that installation reported success.
+    await page.waitForFunction(
+      () => navigator.serviceWorker && navigator.serviceWorker.controller,
+      null, { timeout: 15_000 },
+    );
+    await context.setOffline(true);
+    await page.reload({ waitUntil: 'load', timeout: 15_000 });
+    await page.waitForSelector('#boot-splash', { state: 'detached', timeout: 15_000 });
+    const offlineReady = await page.evaluate(() =>
+      !!window.__game && document.getElementById('game')?.width > 0);
+    assert(offlineReady, 'app boots with a painted canvas while network is offline');
+    assert((await page.evaluate(() => JSON.parse(localStorage.getItem('gem-match:v1')).zen.saveState)) != null,
+      'parked Zen save remains available after a fresh offline reload');
+    await context.setOffline(false);
+    step('service-worker precache completed a full offline reload with save-state intact');
 
     // --- No errors, ever ---------------------------------------------------------
     assert(consoleErrors.length === 0, `no console errors (got ${consoleErrors.length})`);

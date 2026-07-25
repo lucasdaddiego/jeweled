@@ -2,21 +2,17 @@
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
-import * as particles from '../particles.js';
-import * as waves from '../waves.js';
-import * as bolts from '../bolts.js';
 import * as drag from '../dragInput.js';
 import * as wakeLock from '../wakeLock.js';
 import * as achievements from '../achievements.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
-import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
+import {
+  tickEffects, tickHint, clearEffects, drawHintButton, wireCascadePresentation,
+} from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard, newCell } from '../grid.js';
-import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
 import { setScene, clockMs } from '../main.js';
-import { SPECIAL } from '../config.js';
-import { GEM_PARTICLE_PALETTES } from '../render.js';
 import { mulberry32, strHash } from '../rng.js';
 import { getPuzzle, isGoalMet, goalText, progressText } from '../puzzles.js';
 
@@ -29,7 +25,6 @@ let puzzleNum = 1;
 let puzzle = null;
 let movesLeft = 0;
 let resultTriggered = false;
-let lastClearCenter = null;
 
 // Progress tracking for goal detection
 let progress = null;
@@ -73,39 +68,20 @@ export function enter(args = {}) {
   render.setPanelWidth(0);
   cascade.playEntryAnimation();
 
-  cascade.onMatchCleared = (cells, depth) => {
-    lastClearCenter = handleMatchCleared(cells, depth, {
-      render, particles, waves,
-      palettes: GEM_PARTICLE_PALETTES,
-      haptic: storage.getSettings().haptic !== false,
-    });
-    for (const c of cells) {
-      progress.clearedByColor[c.type] = (progress.clearedByColor[c.type] || 0) + 1;
-    }
-    if (depth > progress.maxCascadeDepth) progress.maxCascadeDepth = depth;
-    achievements.notifyMatchCleared(cells.length, depth);
-  };
-  cascade.onSpecialActivated = (act) => {
-    handleSpecialActivated(act, {
-      render, waves, bolts, particles,
-      palettes: GEM_PARTICLE_PALETTES, SPECIAL,
-      haptic: storage.getSettings().haptic !== false,
-    });
-  };
-  cascade.onSpecialSpawned = (special) => {
-    progress.specialsCreated[special] = (progress.specialsCreated[special] || 0) + 1;
-    achievements.notifySpecialSpawned(special);
-  };
-  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
-  cascade.onMoveCommitted = () => { movesLeft--; };
-  cascade.onScoreChanged = (newScore, delta) => {
-    progress.score = newScore;
-    if (delta > 0 && lastClearCenter) {
-      spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
-        render.boardCenterX(), render.layout.hudY + 16);
-    }
-  };
-  cascade.onIdleReached = () => checkComplete();
+  wireCascadePresentation(cascade, {
+    onMatchCleared: (cells, depth) => {
+      for (const c of cells) {
+        progress.clearedByColor[c.type] = (progress.clearedByColor[c.type] || 0) + 1;
+      }
+      if (depth > progress.maxCascadeDepth) progress.maxCascadeDepth = depth;
+    },
+    onSpecialSpawned: (special) => {
+      progress.specialsCreated[special] = (progress.specialsCreated[special] || 0) + 1;
+    },
+    onMoveCommitted: () => { movesLeft--; },
+    onScoreChanged: (newScore) => { progress.score = newScore; },
+    onIdleReached: () => checkComplete(),
+  });
   wakeLock.acquire();
 }
 

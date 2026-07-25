@@ -292,7 +292,7 @@ describe('reshuffle', () => {
     expect(hasAnyValidMove(g)).toBe(true);
   });
 
-  it('exhausts the re-randomize fallback when even re-typing keeps deadlocking', () => {
+  it('uses the deterministic final fallback when even RNG re-typing keeps deadlocking', () => {
     // junk rng for the 50 shuffle attempts (all fail on a one-colour board), then
     // a diag-deadlock stream for every re-randomize attempt → all 100 fail and
     // reshuffle returns leaving the forced deadlock.
@@ -305,9 +305,9 @@ describe('reshuffle', () => {
       const i = (n - 1 - K) % 64; const r = (i / 8) | 0, c = i % 8;
       return (((r + c) % TYPES) + 0.5) / TYPES;
     };
-    reshuffle(g, rng);
+    expect(reshuffle(g, rng)).toBe(true);
     expect(findMatches(g).cleared.size).toBe(0);
-    expect(hasAnyValidMove(g)).toBe(false); // the rng-forced deadlock was left in place
+    expect(hasAnyValidMove(g)).toBe(true);
   });
 });
 

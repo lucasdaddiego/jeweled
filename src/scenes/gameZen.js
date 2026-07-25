@@ -2,9 +2,6 @@
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
-import * as particles from '../particles.js';
-import * as waves from '../waves.js';
-import * as bolts from '../bolts.js';
 import * as painting from '../painting.js';
 import * as sound from '../sound.js';
 import * as drag from '../dragInput.js';
@@ -15,14 +12,13 @@ import * as overlay from './powerupOverlay.js';
 import * as debugHud from '../debugHud.js';
 import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
-import { tickEffects, tickHint, clearEffects, drawHintButton } from './sceneCommon.js';
+import {
+  tickEffects, tickHint, clearEffects, drawHintButton, wireCascadePresentation,
+} from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
 import { createBoard, deserializeGrid, serializeGrid } from '../grid.js';
-import { spawnScore, handleMatchCleared, handleSpecialActivated } from '../floaters.js';
 import { todayISO } from '../rng.js';
 import { setScene } from '../main.js';
-import { SPECIAL } from '../config.js';
-import { GEM_PARTICLE_PALETTES } from '../render.js';
 
 let grid = null;
 let cascade = null;
@@ -32,9 +28,6 @@ let cursorX = 0, cursorY = 0;
 let runEndedScore = null; // set when user clicks End Run
 let milestoneFloor = 0;
 
-// Used to position the "+N" score floater right after a wave clears
-let lastClearCenter = null;
-
 // Undo power-up. curIdle always holds the latest idle board; a committed
 // move shifts it into prevIdle (the pre-move state) BEFORE the move resolves.
 // Bounced/invalid swaps re-reach idle without committing, so they only
@@ -43,13 +36,21 @@ let prevIdle = null;
 let curIdle = null;
 
 function captureIdle() {
-  return { grid: serializeGrid(grid), score: cascade.score, milestoneFloor };
+  return {
+    grid: serializeGrid(grid),
+    score: cascade.score,
+    milestoneFloor,
+    pendingMilestones: overlay.getPendingMilestones(),
+    charges: { ...powerups.getCharges() },
+  };
 }
 
 // Rewind to the board before the last move. Mutates the existing grid array
 // in place — cascade/drag/overlay all hold a reference to it.
 function applyUndo() {
   if (!prevIdle || !cascade || cascade.state !== STATE.IDLE) return false;
+  // A charge earned by the move being rewound cannot pay for its own rewind.
+  if ((prevIdle.charges?.undo ?? 0) <= 0) return false;
   const g2 = deserializeGrid(prevIdle.grid);
   for (let r = 0; r < g2.length; r++) {
     for (let c = 0; c < g2[r].length; c++) grid[r][c] = g2[r][c];
@@ -57,7 +58,9 @@ function applyUndo() {
   cascade.score = prevIdle.score;
   cascade.scoreShown = prevIdle.score;
   milestoneFloor = prevIdle.milestoneFloor;
+  storage.saveKey('powerups', { charges: { ...prevIdle.charges } });
   overlay.setMilestoneFloor(milestoneFloor);
+  overlay.setPendingMilestones(prevIdle.pendingMilestones || 0);
   curIdle = prevIdle;
   prevIdle = null;               // single-step: no undoing the undo
   snapshotSaveState();
@@ -106,39 +109,21 @@ export function enter(args = {}) {
   render.setPanelWidth(render.layout.isNarrow ? 76 : 72);
   if (entryAnim) cascade.playEntryAnimation();
 
-  cascade.onMatchCleared = (cells, depth) => {
-    lastClearCenter = handleMatchCleared(cells, depth, {
-      render, particles, waves, painting,
-      palettes: GEM_PARTICLE_PALETTES,
-      haptic: storage.getSettings().haptic !== false,
-    });
-    achievements.notifyMatchCleared(cells.length, depth);
-    achievements.notifyZenScore(cascade.score);
-  };
-  cascade.onSpecialActivated = (act) => {
-    handleSpecialActivated(act, {
-      render, waves, bolts, particles,
-      palettes: GEM_PARTICLE_PALETTES, SPECIAL,
-      haptic: storage.getSettings().haptic !== false,
-    });
-  };
-  cascade.onScoreChanged = (newScore, delta) => {
-    if (delta > 0 && lastClearCenter) {
-      spawnScore(lastClearCenter.x, lastClearCenter.y - 20, delta,
-        render.boardCenterX(), render.layout.hudY + 16);
-    }
-    const earned = powerups.consumeRunMilestones(newScore, milestoneFloor);
-    milestoneFloor = earned.floor;
-    overlay.setMilestoneFloor(milestoneFloor);
-    overlay.notifyMilestoneEarned(earned.count);
-  };
-  cascade.onSpecialSpawned = (special) => achievements.notifySpecialSpawned(special);
-  cascade.onBombsDefused = (n) => achievements.notifyBombsDefused(n);
-  cascade.onMoveCommitted = () => { prevIdle = curIdle; };
-  cascade.onIdleReached = () => {
-    curIdle = captureIdle();
-    snapshotSaveState();
-  };
+  wireCascadePresentation(cascade, {
+    painting,
+    onMatchCleared: () => achievements.notifyZenScore(cascade.score),
+    onScoreChanged: (newScore) => {
+      const earned = powerups.consumeRunMilestones(newScore, milestoneFloor);
+      milestoneFloor = earned.floor;
+      overlay.setMilestoneFloor(milestoneFloor);
+      overlay.notifyMilestoneEarned(earned.count);
+    },
+    onMoveCommitted: () => { prevIdle = curIdle; },
+    onIdleReached: () => {
+      curIdle = captureIdle();
+      snapshotSaveState();
+    },
+  });
   prevIdle = null;
   curIdle = captureIdle();
   overlay.setUndoHandler(applyUndo);

@@ -45,26 +45,28 @@ and full English/Spanish localization.
 
 ## Run locally
 
-There is **no build step for development** — the app loads its ES-module
-entrypoint (`src/main.js`) directly. Just serve the repo root over HTTP:
+The development server assembles `dist/`, generates the service-worker
+precache manifest from the published files, and serves the ES-module sources:
 
 ```bash
-npm run serve          # → npx serve . (correct module MIME types)
+npm run serve          # build + serve dist/ with correct module MIME types
 # then open http://localhost:3000
 ```
 
-Any static server works as long as it serves `.js` with a JavaScript MIME type.
-A quick alternative (note: some older Python builds serve `.js` as `text/plain`,
-which browsers reject for modules):
+After `npm run build`, any static server can serve `dist/` as long as `.js`
+uses a JavaScript MIME type:
 
 ```bash
-python3 -m http.server 8080
+python3 -m http.server 8080 --directory dist
 ```
 
 ## Build & deploy
 
+Development and CI use Node.js 24.18.0 LTS, pinned in `.nvmrc`.
+
 ```bash
-npm install            # dev tools only (esbuild, html-minifier-terser, wrangler, vitest)
+nvm use                # selects Node 24.18.0 when using nvm
+npm ci                 # install the exact dev toolchain from package-lock.json
 npm run build          # assemble + SHA-stamp dist/ via scripts/build.sh
 npx wrangler pages dev dist     # preview the built output locally
 ```
@@ -93,6 +95,7 @@ suite that runs headless under **jsdom** with a stubbed Canvas 2D context — se
 npm test               # run the suite once
 npm run test:watch     # watch mode
 npm run coverage       # suite + coverage report
+npm run test:workers   # Pages Function in workerd with a real local KV binding
 ```
 
 Coverage is enforced as a CI gate (statements/functions/lines ≥ 99%, branches
@@ -121,17 +124,20 @@ src/
 icons/              App icons + locally-bundled Fluent emoji (see credits)
 scripts/
   build.sh          Assemble dist/ and stamp the commit SHA
+  generate-precache.mjs   Derive the SW precache list from dist/
   build-icons.mjs   Regenerate app icons/favicon from inline SVG
   i18n-audit.sh     Lint for untranslated strings / native dialogs
 test/               Vitest suite (jsdom + stubbed canvas) — one file per module
+test-worker/        workerd integration tests for the Pages Function + KV
 vitest.config.js    Test runner + coverage-gate config
+vitest.workers.config.js   workerd/KV test runner config
 ```
 
 ## npm scripts
 
 | Script | Does |
 | --- | --- |
-| `npm run serve` | Serve the repo root for local dev (unbundled). |
+| `npm run serve` | Build and serve `dist/` for local development. |
 | `npm run build` | Build the Cloudflare Pages output into `dist/`. |
 | `npm run deploy` | Build, then `wrangler pages deploy dist`. |
 | `npm run audit:i18n` | Check for localization regressions. |
@@ -140,11 +146,12 @@ vitest.config.js    Test runner + coverage-gate config
 | `npm test` | Run the Vitest suite once. |
 | `npm run test:watch` | Vitest in watch mode. |
 | `npm run test:e2e` | Playwright smoke test (needs `npx playwright install chromium` once). |
+| `npm run test:workers` | Run the Pages Function against workerd and a local KV binding. |
 | `npm run coverage` | Suite + coverage report (the CI gate). |
 
 ## Daily leaderboard (optional)
 
-The Daily result screen shows an online top-10 when the backend is deployed.
+The Daily result screen shows an online top-five when the backend is deployed.
 To enable it:
 
 ```bash

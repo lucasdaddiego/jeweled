@@ -461,6 +461,9 @@ describe('ice levels (level 5: corners layout)', () => {
   });
 
   it('undo restores melted ice along with the board', () => {
+    storage.saveKey('powerups', {
+      charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 1 },
+    });
     const setUndo = vi.spyOn(overlay, 'setUndoHandler');
     classic.enter({ restoreFrom: { grid: plantedSerial(), level: 5, movesLeft: 12, score: 0, milestoneFloor: 0, ice: [[0, 0], [7, 7]] } });
     const undoFn = setUndo.mock.calls[0][0];

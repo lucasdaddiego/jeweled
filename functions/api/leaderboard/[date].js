@@ -34,6 +34,29 @@ function json(body, status = 200) {
   });
 }
 
+// Strict calendar parser. Date.parse/Date.UTC normalize overflow dates
+// (2026-02-29 → 2026-03-01), so round-trip the components before accepting
+// the value as a leaderboard key.
+function dayStartUtc(date) {
+  if (!DATE_RE.test(date)) return NaN;
+  const [year, month, day] = date.split('-').map(Number);
+  const value = Date.UTC(year, month - 1, day);
+  const parsed = new Date(value);
+  if (parsed.getUTCFullYear() !== year
+      || parsed.getUTCMonth() !== month - 1
+      || parsed.getUTCDate() !== day) return NaN;
+  return value;
+}
+
+function logFailure(operation, error, context) {
+  console.error(JSON.stringify({
+    message: 'leaderboard request failed',
+    operation,
+    error: error instanceof Error ? error.message : String(error),
+    date: String(context?.params?.date ?? ''),
+  }));
+}
+
 // Parse a stored day blob into a clean, sorted array of {name, score}.
 // Defensive against hand-edited or corrupted KV values: bad JSON or a
 // non-array collapses to an empty board, entries are re-shaped to exactly
@@ -56,13 +79,14 @@ function parseEntries(raw) {
 export async function onRequestGet(context) {
   try {
     const date = String(context.params?.date ?? '');
-    if (!DATE_RE.test(date)) return json({ error: 'bad date' }, 400);
+    if (!Number.isFinite(dayStartUtc(date))) return json({ error: 'bad date' }, 400);
     const kv = context.env?.LEADERBOARD;
     if (!kv) return json({ error: 'leaderboard not configured' }, 503);
 
     const entries = parseEntries(await kv.get(`day:${date}`));
     return json({ date, entries: entries.slice(0, TOP_RETURNED) });
-  } catch {
+  } catch (error) {
+    logFailure('get', error, context);
     return json({ error: 'internal error' }, 500);
   }
 }
@@ -74,16 +98,16 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   try {
     const date = String(context.params?.date ?? '');
-    if (!DATE_RE.test(date)) return json({ error: 'bad date' }, 400);
+    const dayStart = dayStartUtc(date);
+    if (!Number.isFinite(dayStart)) return json({ error: 'bad date' }, 400);
     const kv = context.env?.LEADERBOARD;
     if (!kv) return json({ error: 'leaderboard not configured' }, 503);
 
     // Only accept submissions for "today", with a ±36h window because the
     // client uses the player's LOCAL date (src/rng.js todayISO): a player at
     // UTC+14 or UTC-12 can legitimately sit a calendar day away from server
-    // UTC. Date.parse also rejects impossible dates (2026-02-31 → NaN).
-    const dayStart = Date.parse(`${date}T00:00:00Z`);
-    if (!Number.isFinite(dayStart) || Math.abs(Date.now() - dayStart) > DATE_WINDOW_MS) {
+    // UTC.
+    if (Math.abs(Date.now() - dayStart) > DATE_WINDOW_MS) {
       return json({ error: 'date out of range' }, 400);
     }
 
@@ -125,7 +149,8 @@ export async function onRequestPost(context) {
     await kv.put(rlKey, String(used + 1), { expirationTtl: RL_TTL_S });
 
     return json({ date, entries: entries.slice(0, TOP_RETURNED), rank });
-  } catch {
+  } catch (error) {
+    logFailure('post', error, context);
     return json({ error: 'internal error' }, 500);
   }
 }

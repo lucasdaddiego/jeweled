@@ -236,6 +236,15 @@ describe('addPlayTimeMs', () => {
     ach.addPlayTimeMs(5000);   // pending was zeroed by the flush — accumulating afresh
     expect(ach.summary().counters.timePlayedMs).toBe(15000);
   });
+
+  it('flushPlayTime persists a partial chunk and is idempotent', async () => {
+    const { ach } = await fresh();
+    ach.addPlayTimeMs(4321);
+    ach.flushPlayTime();
+    expect(ach.summary().counters.timePlayedMs).toBe(4321);
+    ach.flushPlayTime();
+    expect(ach.summary().counters.timePlayedMs).toBe(4321);
+  });
 });
 
 describe('unlock short-circuit + consumeToast', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Cascade, STATE } from '../src/cascade.js';
-import { makeEmptyGrid, newCell } from '../src/grid.js';
+import { hasAnyValidMove, makeEmptyGrid, newCell } from '../src/grid.js';
 import { Tween } from '../src/animations.js';
 import { mulberry32 } from '../src/rng.js';
 import {
@@ -13,6 +13,14 @@ function checker(a = 2, b = 3) {
   const g = makeEmptyGrid();
   for (let r = 0; r < GRID; r++) {
     for (let c = 0; c < GRID; c++) g[r][c] = newCell((r + c) % 2 === 0 ? a : b);
+  }
+  return g;
+}
+
+function deadlock() {
+  const g = makeEmptyGrid();
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) g[r][c] = newCell((r + c) % 7);
   }
   return g;
 }
@@ -87,6 +95,7 @@ describe('tryStartSwap — valid swap drives a full cascade', () => {
       onMatchCleared: vi.fn(),
       onScoreChanged: vi.fn(),
       onSpecialSpawned: vi.fn(),
+      onBombTick: vi.fn(),
       onBombExploded: vi.fn(),
       onIdleReached: vi.fn(),
     };
@@ -99,6 +108,7 @@ describe('tryStartSwap — valid swap drives a full cascade', () => {
     expect(c.state).toBe(STATE.IDLE);
     expect(cb.onMoveCommitted).toHaveBeenCalledTimes(1);
     expect(cb.onSpecialSpawned).toHaveBeenCalledWith(SPECIAL.LINE_H);
+    expect(cb.onBombTick).toHaveBeenCalled();
     expect(cb.onBombExploded).toHaveBeenCalledWith(expect.objectContaining({ r: 7, c: 7 }));
     expect(c.grid[7][7]?.special).not.toBe(SPECIAL.TIME_BOMB);  // bomb gone (cell later refilled)
     expect(c.score).toBeGreaterThanOrEqual(SCORE.PER_GEM_CLEARED * 4 + SCORE.SPECIAL_SPAWN_BONUS);
@@ -276,6 +286,21 @@ describe('_afterSpawn cascade (falling existing gems form a new match)', () => {
     expect(c.state).toBe(STATE.IDLE);
     expect(maxDepth).toBeGreaterThanOrEqual(2);     // proves the cascade chained
     expect(c.onIdleReached).toHaveBeenCalled();
+  });
+
+  it('reshuffles a no-match deadlock before returning control to IDLE', () => {
+    const g = deadlock();
+    expect(hasAnyValidMove(g)).toBe(false);
+    const c = new Cascade(g, { rng: () => 0.123 });
+    c.onReshuffle = vi.fn();
+    c.onIdleReached = vi.fn();
+
+    c._afterSpawn();
+
+    expect(c.state).toBe(STATE.IDLE);
+    expect(hasAnyValidMove(g)).toBe(true);
+    expect(c.onReshuffle).toHaveBeenCalledOnce();
+    expect(c.onIdleReached).toHaveBeenCalledOnce();
   });
 });
 
