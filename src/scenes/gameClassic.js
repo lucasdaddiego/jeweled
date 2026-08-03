@@ -189,6 +189,11 @@ export function exit() {
   // so it'll only persist when it's safe to restore from.
   snapshotSaveState();
   drag.unbind();
+  // See gameZen.exit(): a parked run's snapshot owns its pendingMilestones, so
+  // overlay.unbind()'s auto-bank must not pay the same milestone out again on
+  // every park/resume cycle. Once the level is finalized (saveState nulled by
+  // finalizeWin/finalizeLose) the auto-bank is the only net and still runs.
+  if (storage.load().classic.saveState) overlay.setPendingMilestones(0);
   overlay.unbind();
   debugHud.setActiveCascade(null);
   wakeLock.release();

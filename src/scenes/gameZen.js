@@ -148,6 +148,13 @@ export function exit() {
   }
   sound.stopZenPad();
   drag.unbind();
+  // Exactly one of the two safety nets may own an unallocated milestone charge.
+  // A parked run carries its own pendingMilestones inside the snapshot, so the
+  // snapshot owns it and overlay.unbind()'s auto-bank must not ALSO pay it out:
+  // that minted a fresh charge on every park/resume cycle while the snapshot
+  // kept re-offering the same milestone. With no resumable snapshot (run ended,
+  // or finalized), the auto-bank stays the only net and still runs.
+  if (storage.load().zen.saveState) overlay.setPendingMilestones(0);
   overlay.unbind();
   debugHud.setActiveCascade(null);
   wakeLock.release();

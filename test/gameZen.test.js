@@ -561,6 +561,43 @@ describe('pendingMilestones snapshot roundtrip', () => {
     zen.enter({ restoreFrom: ss });
     expect(overlay.isModalOpen()).toBe(true);           // picker re-opened on restore
   });
+
+  // The snapshot and overlay.unbind()'s auto-bank are two nets for the SAME
+  // charge: if both fire, parking and resuming mints a charge per cycle from a
+  // single milestone (repeat until every slot hits POWERUP_MAX_CHARGES).
+  it('parking does not bank the pending charge — the snapshot owns it (no per-cycle minting)', () => {
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.onScoreChanged(1500, 1500);                       // one milestone, unallocated
+    const total = () => Object.values(storage.load().powerups.charges).reduce((a, b) => a + b, 0);
+
+    zen.exit();                                         // park #1
+    let ss = storage.load().zen.saveState;
+    expect(ss.pendingMilestones).toBe(1);
+    expect(total()).toBe(0);
+
+    zen.enter({ restoreFrom: ss }); zen.exit();         // park #2
+    ss = storage.load().zen.saveState;
+    zen.enter({ restoreFrom: ss }); zen.exit();         // park #3
+    ss = storage.load().zen.saveState;
+
+    expect(ss.pendingMilestones).toBe(1);               // still exactly one, still owed
+    expect(total()).toBe(0);                            // and never paid out twice
+  });
+
+  // The other half of the mutual exclusion: with no resumable snapshot, unbind's
+  // auto-bank is the ONLY net and must still fire, or ending mid-popup eats it.
+  it('ending the run still auto-banks the pending charge (snapshot is gone)', () => {
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.onScoreChanged(1500, 1500);
+    const spy = vi.spyOn(render, 'drawHitButton');
+    zen.draw();
+    spy.mock.calls[0][5]();                             // End -> finalizeRun (saveState nulled)
+    zen.exit();
+    expect(storage.load().zen.saveState).toBeNull();
+    expect(storage.load().powerups.charges.shuffle).toBe(1);  // preserved, not lost
+  });
 });
 
 describe('gallery capture (End with painting enabled)', () => {

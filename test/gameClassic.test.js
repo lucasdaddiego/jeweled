@@ -289,6 +289,46 @@ describe('snapshotSaveState guards', () => {
   });
 });
 
+describe('pendingMilestones: the snapshot and unbind must not both pay out', () => {
+  const start = () => ({ grid: plantedSerial(), level: 1, movesLeft: 20, score: 50 });
+  const totalCharges = () =>
+    Object.values(storage.load().powerups.charges).reduce((a, b) => a + b, 0);
+
+  // Both the snapshot's pendingMilestones and overlay.unbind()'s auto-bank cover
+  // the SAME unallocated charge; if both fire, every park/resume cycle mints a
+  // fresh charge from one milestone until every slot is at cap.
+  it('parking leaves the charge owed in the snapshot, unbanked, however many cycles', () => {
+    classic.enter({ restoreFrom: start() });
+    debugHud.activeCascade().onScoreChanged(1500, 1500);   // one milestone, unallocated
+
+    classic.exit();                                        // park #1
+    let ss = storage.load().classic.saveState;
+    expect(ss.pendingMilestones).toBe(1);
+    expect(totalCharges()).toBe(0);
+
+    classic.enter({ restoreFrom: ss }); classic.exit();    // park #2
+    ss = storage.load().classic.saveState;
+    classic.enter({ restoreFrom: ss }); classic.exit();    // park #3
+    ss = storage.load().classic.saveState;
+
+    expect(ss.pendingMilestones).toBe(1);                  // still exactly one, still owed
+    expect(totalCharges()).toBe(0);                        // and never paid out twice
+  });
+
+  // The other half of the mutual exclusion: once the level is finalized there is
+  // no snapshot left to re-offer the charge, so unbind's auto-bank must fire.
+  it('finishing the level still auto-banks the pending charge (no snapshot left)', () => {
+    classic.enter({ restoreFrom: start() });
+    const c = debugHud.activeCascade();
+    c.onScoreChanged(1500, 1500);
+    c.score = 500;                                         // == target(1)
+    c.onIdleReached();                                     // win -> saveState nulled
+    classic.exit();
+    expect(storage.load().classic.saveState).toBeNull();
+    expect(storage.load().powerups.charges.shuffle).toBe(1);
+  });
+});
+
 describe('draw()', () => {
   it('low score + plenty of moves: purple progress bar, calm moves color (wide => 72px Back)', () => {
     classic.enter({ level: 1 });
