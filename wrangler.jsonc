@@ -2,17 +2,10 @@
   "name": "jeweled",
   "compatibility_date": "2026-07-25",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": {
-    "enabled": true,
-    "logs": {
-      "enabled": true,
-      "head_sampling_rate": 1
-    },
-    "traces": {
-      "enabled": true,
-      "head_sampling_rate": 0.01
-    }
-  },
+  // No "observability" block here: it is a Workers-only key, and wrangler fails
+  // Pages config validation outright when it is present ("Configuration file for
+  // Pages projects does not support 'observability'"), which blocked every deploy.
+  // Pages logs/analytics are configured in the dashboard instead.
   // Publish only the files in dist/ — populated by scripts/build.sh. This keeps
   // dev tooling (.claude/, scripts/) out of the public origin; dist/404.html
   // gives unknown paths a real 404 instead of the SPA shell.
