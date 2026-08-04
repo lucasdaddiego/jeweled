@@ -574,7 +574,15 @@ export class Cascade {
     }
     // Place specials at protected cells (overwrite the existing gem with the special)
     if (this._pendingSpawns) {
-      for (const s of this._pendingSpawns) {
+      // One gem per cell. Two runs of different colours can cross on a wildcard
+      // — the h-run promotes a LINE_H there and the v-run a LINE_V, and both
+      // resolve to that same cell — but only one gem can land. Keep the last
+      // entry (the one that wins the write) so the spawn bonus and the
+      // onSpecialSpawned notification fire once per gem actually placed
+      // instead of once per discarded candidate.
+      const byCell = new Map();
+      for (const s of this._pendingSpawns) byCell.set(`${s.r},${s.c}`, s);
+      for (const s of byCell.values()) {
         // Notify scene-side listeners (e.g. achievements) about each special spawn.
         if (this.onSpecialSpawned) this.onSpecialSpawned(s.special);
         // Borrow the next id from grid.js implicit id system by reusing existing cell shape
@@ -617,7 +625,20 @@ export class Cascade {
       const { cleared, chained } = activateSpecial(
         this.grid, a.r, a.c, a.special, a.partnerType, this.rng, a.partnerSpecial, a.type,
       );
-      if (cleared.size === 0) continue;
+      // Only cells still live in the grid actually clear, and `cleared` always
+      // carries the activating cell whether it is live or not — so its size
+      // alone can't tell a real wave from a no-op. Two line gems in the same
+      // lane hit this: the first empties the row, the second then finds nothing
+      // but still reports cleared.size === 1, which used to score, whoosh, and
+      // fire onMatchCleared with an empty cell list (centroid 0/0 = NaN in the
+      // FX layer). Build the live list once and skip the wave when it's empty.
+      const liveCells = [];
+      for (const key of cleared) {
+        const [lr, lc] = key.split(',').map(Number);
+        const cell = this.grid[lr][lc];
+        if (cell) liveCells.push({ r: lr, c: lc, type: cell.type, special: cell.special });
+      }
+      if (liveCells.length === 0) continue;
 
       // Pre-extract target coordinates so scenes can draw effects (lightning
        // arcs, fire spread, star trails) before the clear animations consume
@@ -642,15 +663,7 @@ export class Cascade {
       this.score += gainedScore;
       // Animate clear
       this.clearingCells = new Set(cleared);
-      if (this.onMatchCleared) {
-        const cells = [];
-        for (const key of cleared) {
-          const [r, c] = key.split(',').map(Number);
-          const cell = this.grid[r][c];
-          if (cell) cells.push({ r, c, type: cell.type, special: cell.special });
-        }
-        this.onMatchCleared(cells, this.cascadeDepth);
-      }
+      this.onMatchCleared?.(liveCells, this.cascadeDepth);
       // Fire score callback AFTER onMatchCleared so scenes that read the
       // cleared centroid (lastClearCenter) have it set for the +N floater.
       this.onScoreChanged?.(this.score, gainedScore);

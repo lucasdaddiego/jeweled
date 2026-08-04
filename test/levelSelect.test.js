@@ -113,6 +113,21 @@ describe('levelSelect: tiles', () => {
     expect(drewText('5000')).toBe(true);  // level 1 best score
     expect(drewText('🔒')).toBe(true);    // locked tiles (11..20)
   });
+
+  it('clamps an out-of-range starsEarned from an imported save instead of throwing', () => {
+    // importString deep-merges over the defaults, so an unknown leaf value
+    // rides straight through into classic.levels. 4 stars would make the tile
+    // do '☆'.repeat(-1) → RangeError, and main.js's frame() re-arms the RAF
+    // only after draw() returns — one throw and the canvas is frozen for good.
+    const code = 'JWLD1.' + btoa(JSON.stringify({
+      profile: {}, settings: {},
+      classic: { highestUnlocked: 5, levels: { 1: { starsEarned: 4, bestScore: 10 } } },
+    }));
+    expect(storage.importString(code)).toEqual({ ok: true });
+    ls.enter();
+    expect(() => ls.draw()).not.toThrow();
+    expect(drewText('★★★')).toBe(true);
+  });
 });
 
 describe('levelSelect: pagination', () => {

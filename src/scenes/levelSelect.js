@@ -116,7 +116,11 @@ function drawLevelTile(x, y, w, h, ln, data, locked) {
   ctx.fillText(locked ? '🔒' : String(ln), x + w / 2, y + h * 0.35);
   if (!locked) {
     ctx.font = `${Math.floor(w * 0.14)}px -apple-system, system-ui, sans-serif`;
-    const stars = '★'.repeat(data.starsEarned) + '☆'.repeat(3 - data.starsEarned);
+    // Clamp before repeat() — an imported save can carry any number here
+    // (deepMerge passes unknown leaf values straight through) and
+    // '☆'.repeat(-1) throws, which would kill the whole RAF loop.
+    const n = Math.max(0, Math.min(3, data.starsEarned | 0));
+    const stars = '★'.repeat(n) + '☆'.repeat(3 - n);
     ctx.fillStyle = '#ffd166';
     ctx.fillText(stars, x + w / 2, y + h * 0.62);
     if (data.bestScore > 0) {

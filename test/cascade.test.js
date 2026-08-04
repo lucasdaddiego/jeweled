@@ -399,6 +399,38 @@ describe('_afterResolve — spawning a special into a vacated cell', () => {
     expect(c.grid[7][0].type).toBe(3);
     expect(onSpecialSpawned).toHaveBeenCalledWith(SPECIAL.LINE_H);
   });
+
+  it('places one gem and pays one bonus when two runs claim the same cell', () => {
+    // A 4-run of type 0 and a 4-run of type 1 crossing on a wildcard: the row
+    // promotes a LINE_H at (3,3) and the column a LINE_V at the same cell, so
+    // findMatches emits two toSpawn entries for one cell (their types differ,
+    // so the T/L merge doesn't apply). Only one gem can land there, so only
+    // one spawn bonus and one onSpecialSpawned are due.
+    const g = checker();
+    g[3][3] = newCell(0, SPECIAL.WILDCARD);
+    g[3][1] = newCell(0); g[3][2] = newCell(0); g[3][4] = newCell(0);
+    g[1][3] = newCell(1); g[2][3] = newCell(1); g[4][3] = newCell(1);
+    const c = new Cascade(g, { rng: mulberry32(3) });
+    const spawned = [];
+    c.onSpecialSpawned = (s) => spawned.push(s);
+    expect(c.resolveCurrentMatches()).toBe(true);
+    const clearScore = c.score;                  // 7 cells at depth 1
+    c.update(1000);                              // RESOLVING → _afterResolve places specials
+    // The 7-cell wave also earns a big-wave COLOR_BOMB on a different cell —
+    // two gems placed, two bonuses, two notifications. (The line gem has
+    // already fallen into the hole below by the time gravity ran, so look for
+    // it down its column rather than at (3,3).)
+    const linesInCol3 = [];
+    for (let r = 0; r < GRID; r++) {
+      const cell = c.grid[r][3];
+      if (cell && (cell.special === SPECIAL.LINE_H || cell.special === SPECIAL.LINE_V)) {
+        linesInCol3.push(cell.special);
+      }
+    }
+    expect(linesInCol3).toEqual([SPECIAL.LINE_V]);
+    expect(spawned).toEqual([SPECIAL.LINE_V, SPECIAL.COLOR_BOMB]);
+    expect(c.score).toBe(clearScore + 2 * SCORE.SPECIAL_SPAWN_BONUS);
+  });
 });
 
 describe('_afterActivations', () => {
@@ -448,6 +480,36 @@ describe('_afterActivations', () => {
     expect(c.state).toBe(STATE.RESOLVING);
     runToIdle(c);
     expect(c.state).toBe(STATE.IDLE);
+  });
+
+  it('drops a queued activation whose whole footprint is already empty', () => {
+    // Two line gems in the same row. The first sweeps row 2 (chaining the
+    // second); by the time the second runs every cell in that row is null, so
+    // it must not score, whoosh, or emit an empty cleared list — the FX layer
+    // divides by cells.length for the wave centroid.
+    const g = checker();
+    g[2][1] = newCell(0, SPECIAL.LINE_H);
+    g[2][6] = newCell(0, SPECIAL.LINE_H);
+    const c = new Cascade(g, { rng: mulberry32(9) });
+    const activated = [];
+    const waves = [];
+    c.onSpecialActivated = (act) => activated.push(act);
+    c.onMatchCleared = (cells) => waves.push(cells);
+    c.activationQueue = [{ r: 2, c: 1, special: SPECIAL.LINE_H, type: 0 }];
+    c.activationQueueIndex = 0;
+    c.state = STATE.ACTIVATING_SPECIALS;
+    c._afterActivations();
+    expect(c.activationQueue).toHaveLength(2);   // the second line gem chained
+    const scoreAfterFirst = c.score;
+    // Drive until the queue drains — the second gem must be processed away
+    // without a wave of its own.
+    for (let i = 0; i < 20 && c.activationQueue.length > 0; i++) c.update(1000);
+    expect(c.activationQueue).toHaveLength(0);
+    expect(activated).toHaveLength(1);
+    expect(waves).toHaveLength(1);
+    expect(waves[0]).toHaveLength(8);
+    expect(c.score).toBe(scoreAfterFirst);
+    expect(scoreAfterFirst).toBe(SCORE.PER_GEM_CLEARED * 8);
   });
 });
 
