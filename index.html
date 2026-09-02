@@ -9,6 +9,10 @@
   <meta name="theme-color" content="#7c3aed">
   <meta name="description" content="A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.">
   <title>Jeweled</title>
+  <!-- Cloudflare serves this same site on jeweled.pages.dev as well as the
+       custom domain, and a static robots.txt cannot tell the two hosts apart.
+       Without this, Google indexes both and picks a canonical itself. -->
+  <link rel="canonical" href="https://jeweled.daddiego.com.ar/">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/icons/icon-192.png" sizes="192x192">
