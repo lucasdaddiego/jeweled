@@ -67,6 +67,12 @@ function settingsRects() {
 function down(rect) {
   title.onPointer({ type: 'down', x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 });
 }
+function up(rect) {
+  title.onPointer({ type: 'up', x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 });
+}
+// Export and View source need user activation, so they fire on the release of
+// a press that started on them (input.createPressTracker): a tap is down + up.
+function tap(rect) { down(rect); up(rect); }
 
 // enter → draw → click Settings → redraw, returning the 7 settings-overlay rects
 // in draw order: [haptic, paintingMode, autoPill, enPill, esPill, reset, close].
@@ -492,7 +498,7 @@ describe('onPointer — mode navigation', () => {
     // The view-source link is pushed last (after the mode buttons, before any
     // overlay) and isn't a drawHitButton, so read it off the live array.
     const link = liveButtons()[liveButtons().length - 1];
-    down(link);
+    tap(link);
     expect(openSpy).toHaveBeenCalledWith('https://github.com/lucasdaddiego/jeweled', '_blank', 'noopener,noreferrer');
   });
 });
@@ -678,7 +684,7 @@ describe('settings overlay — save transfer', () => {
     setClipboard({ writeText });
     const alert = vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
     const rects = openSettings();
-    down(rects[10]);                                   // Export (async onClick)
+    tap(rects[10]);                                   // Export (async onClick)
     await flushMicro();
     expect(writeText).toHaveBeenCalledWith(storage.exportString());
     expect(alert).toHaveBeenCalledWith(i18n.t('settings.exportCopied'));
@@ -690,7 +696,7 @@ describe('settings overlay — save transfer', () => {
     setClipboard({ writeText: vi.fn().mockRejectedValue(new Error('denied')) });
     const alert = vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
     const rects = openSettings();
-    down(rects[10]);
+    tap(rects[10]);
     await flushMicro();
     const wrap = document.getElementById('import-input-wrap');
     expect(wrap).toBeTruthy();
@@ -709,7 +715,7 @@ describe('settings overlay — save transfer', () => {
     seedName('Ada');
     setClipboard(undefined);                           // navigator.clipboard?.writeText → false
     const rects = openSettings();
-    down(rects[10]);
+    tap(rects[10]);
     await flushMicro();
     expect(document.getElementById('import-input')?.readOnly).toBe(true);
   });
@@ -815,5 +821,90 @@ describe('settings overlay — save transfer', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// --- release-activated buttons (user activation) ----------------------------
+
+describe('release-activated buttons', () => {
+  // window.open / clipboard writes need transient user activation; a touch
+  // pointerdown doesn't grant it, so these fire on the release of a press that
+  // started on them — never on the press alone, never on a release that
+  // started elsewhere.
+  const REPO = 'https://github.com/lucasdaddiego/jeweled';
+  function viewSourceRect() {
+    seedName('Ada');
+    title.enter();
+    title.draw();
+    const b = liveButtons().find((r) => r.activateOnUp && !r.kind);
+    expect(b).toBeTruthy();
+    return b;
+  }
+  function setClipboard(value) {
+    Object.defineProperty(navigator, 'clipboard', { value, configurable: true, writable: true });
+  }
+  afterEach(() => {
+    try { setClipboard(undefined); } catch { /* ignore */ }
+  });
+
+  it('View source opens the repo in a new tab on the release of a tap, not on the press', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const link = viewSourceRect();
+    down(link);
+    expect(open).not.toHaveBeenCalled();
+    up(link);
+    expect(open).toHaveBeenCalledExactlyOnceWith(REPO, '_blank', 'noopener,noreferrer');
+  });
+
+  it('View source ignores a press released elsewhere, one started elsewhere, and a cancelled one', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const link = viewSourceRect();
+    down(link); title.onPointer({ type: 'up', x: 400, y: 300 });
+    title.onPointer({ type: 'down', x: 1, y: 1 }); up(link);
+    down(link); title.onPointer({ type: 'cancel', x: 0, y: 0 }); up(link);
+    expect(open).not.toHaveBeenCalled();
+    tap(link);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('Export arms on the press and copies on the release; the overlay stays open in between', async () => {
+    seedName('Ada');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    setClipboard({ writeText });
+    vi.spyOn(dialogs, 'alert').mockResolvedValue(undefined);
+    const rects = openSettings();
+    down(rects[10]);                                   // Export: pressed, not fired
+    await flushMicro();
+    expect(writeText).not.toHaveBeenCalled();
+    title.draw();
+    expect(settingsRects()).toHaveLength(14);          // the press did not close the overlay
+    up(rects[10]);
+    await flushMicro();
+    expect(writeText).toHaveBeenCalledWith(storage.exportString());
+  });
+
+  it('Export does not fire when the press is released over another button', async () => {
+    seedName('Ada');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    setClipboard({ writeText });
+    const rects = openSettings();
+    down(rects[10]);                                   // Export
+    up(rects[13]);                                     // released over Close
+    await flushMicro();
+    expect(writeText).not.toHaveBeenCalled();
+    title.draw();
+    expect(settingsRects()).toHaveLength(14);          // and Close did not fire either
+  });
+
+  it('a DOM modal cancels a pending press', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const link = viewSourceRect();
+    down(link);
+    title.exit(); title.enter();                       // no name → name-entry modal opens
+    storage.reset();
+    title.enter();
+    expect(document.getElementById('name-input-wrap')).toBeTruthy();
+    up(link);
+    expect(open).not.toHaveBeenCalled();
   });
 });

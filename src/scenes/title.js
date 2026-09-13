@@ -12,6 +12,7 @@ import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
 import { BUILD } from '../build.js';
+import { createPressTracker, hitTest } from '../input.js';
 
 // Public source repository — linked from the title footer.
 const REPO_URL = 'https://github.com/lucasdaddiego/jeweled';
@@ -21,12 +22,15 @@ let nameInputWrap = null;
 let settingsOpen = false;
 let cursorX = 0, cursorY = 0;
 let needsNameEntry = false;
+// Pending press for the release-activated buttons (View source, Export save).
+const press = createPressTracker();
 
 export function enter() {
   // Body keeps its default animated gradient — no class needed unless we want
   // a theme-* palette override.
   document.body.className = '';
   buttons = [];
+  press.cancel();
   settingsOpen = false;
   const profile = storage.getProfile();
   needsNameEntry = !profile.playerName;
@@ -215,8 +219,9 @@ export function draw() {
   });
 
   // Source-code link — tiny, bottom-left, mirroring the build tag opposite it.
-  // Opens the public repo in a new tab. The click runs synchronously inside the
-  // pointerdown gesture (input.js → onPointer), so window.open isn't blocked.
+  // Opens the public repo in a new tab. window.open needs transient user
+  // activation, which a touch pointerdown doesn't grant — so this button fires
+  // on the release of the tap (activateOnUp, see input.createPressTracker).
   {
     const ctx = render.ctxRef();
     const label = i18n.t('title.viewSource');
@@ -242,6 +247,7 @@ export function draw() {
     buttons.push({
       x: lx - 6, y: lTop, w: lw + 12, h: (ly + 4) - lTop,
       onClick: () => window.open(REPO_URL, '_blank', 'noopener,noreferrer'),
+      activateOnUp: true,
     });
   }
 
@@ -390,7 +396,7 @@ function drawSettingsOverlay() {
   {
     const half = (panelW - 40 - 10) / 2;
     drawHitButton(px + 20, ty, half, 36, i18n.t('settings.exportSave'),
-      exportSave, { kind: 'settings' });
+      exportSave, { kind: 'settings', activateOnUp: true });   // clipboard → fire on release
     drawHitButton(px + 20 + half + 10, ty, half, 36, i18n.t('settings.importSave'),
       () => { showImportEntry(); }, { kind: 'settings' });
     ty += 46;
@@ -526,16 +532,16 @@ function drawToggle(x, y, w, label, value, onClick) {
 }
 
 export function onPointer(evt) {
-  if (evt.type !== 'down') return;
-  if (nameInputWrap || importInputWrap) return; // DOM modals block the canvas
+  if (nameInputWrap || importInputWrap) { press.cancel(); return; } // DOM modals block the canvas
+  if (evt.type === 'up') { press.release(evt.x, evt.y); return; }
+  if (evt.type !== 'down') { press.cancel(); return; }   // pointercancel
+  // Fire now — or, for buttons whose action needs user activation, on release.
+  const activate = (b) => (b.activateOnUp ? press.arm(b) : b.onClick());
   if (settingsOpen) {
     for (let i = buttons.length - 1; i >= 0; i--) {
       const b = buttons[i];
       if (b.kind !== 'settings') continue;
-      if (evt.x >= b.x && evt.x <= b.x + b.w && evt.y >= b.y && evt.y <= b.y + b.h) {
-        b.onClick();
-        return;
-      }
+      if (hitTest(b, evt.x, evt.y)) { activate(b); return; }
     }
     settingsOpen = false;
     return;
@@ -545,10 +551,7 @@ export function onPointer(evt) {
   // of the mode buttons, so they need first dibs on the click.
   for (let i = buttons.length - 1; i >= 0; i--) {
     const b = buttons[i];
-    if (evt.x >= b.x && evt.x <= b.x + b.w && evt.y >= b.y && evt.y <= b.y + b.h) {
-      b.onClick();
-      return;
-    }
+    if (hitTest(b, evt.x, evt.y)) { activate(b); return; }
   }
 }
 

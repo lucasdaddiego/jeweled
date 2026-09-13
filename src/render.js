@@ -901,7 +901,10 @@ export function drawHitButton(x, y, w, h, label, onClick, buttons, cursorX, curs
     if (!opts.disabled) sound.uiTap();
     return onClick();
   };
-  buttons.push({ x, y, w, h, onClick: withTapSound, kind: opts.kind, modal: opts.modal });
+  const btn = { x, y, w, h, onClick: withTapSound, kind: opts.kind, modal: opts.modal };
+  // Fire on the release of a press that started here (input.createPressTracker).
+  if (opts.activateOnUp) btn.activateOnUp = true;
+  buttons.push(btn);
 }
 
 export function drawButton(x, y, w, h, label, opts = {}) {

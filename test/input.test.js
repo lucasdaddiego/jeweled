@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { installCanvas, setViewport } from './helpers.js';
+import { createPressTracker, hitTest } from '../src/input.js';
 
 // input.js imports screenToCell from render.js, which imports main.js (whose
 // import-time init() would boot the whole game under jsdom). Mock main so the
@@ -181,5 +182,65 @@ describe('no callbacks registered', () => {
     down(p.x, p.y, 1);
     expect(() => cancel(p.x, p.y, 1)).not.toThrow();
     expect(input.isPointerDown()).toBe(false);
+  });
+});
+
+describe('createPressTracker (release-activated buttons)', () => {
+  const btn = () => ({ x: 100, y: 100, w: 80, h: 40, onClick: vi.fn() });
+
+  it('hitTest is inclusive on all four edges', () => {
+    const b = btn();
+    expect(hitTest(b, 100, 100)).toBe(true);
+    expect(hitTest(b, 180, 140)).toBe(true);
+    expect(hitTest(b, 99, 120)).toBe(false);
+    expect(hitTest(b, 140, 141)).toBe(false);
+  });
+
+  it('fires on a release inside the armed button, exactly once', () => {
+    const t = createPressTracker();
+    const b = btn();
+    t.arm(b);
+    expect(b.onClick).not.toHaveBeenCalled();     // the press alone does nothing
+    t.release(140, 120);
+    expect(b.onClick).toHaveBeenCalledTimes(1);
+    t.release(140, 120);                           // no pending press any more
+    expect(b.onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a press released outside the button it started on', () => {
+    const t = createPressTracker();
+    const b = btn();
+    t.arm(b);
+    t.release(300, 300);
+    expect(b.onClick).not.toHaveBeenCalled();
+    t.release(140, 120);                           // a later stray release can't revive it
+    expect(b.onClick).not.toHaveBeenCalled();
+  });
+
+  it('ignores a release over a button that was never pressed', () => {
+    const t = createPressTracker();
+    const b = btn();
+    t.release(140, 120);
+    expect(b.onClick).not.toHaveBeenCalled();
+  });
+
+  it('cancel() clears the pending press', () => {
+    const t = createPressTracker();
+    const b = btn();
+    t.arm(b);
+    t.cancel();
+    t.release(140, 120);
+    expect(b.onClick).not.toHaveBeenCalled();
+  });
+
+  it('a second press replaces the first', () => {
+    const t = createPressTracker();
+    const a = btn();
+    const b = { ...btn(), x: 300 };
+    t.arm(a);
+    t.arm(b);
+    t.release(340, 120);
+    expect(a.onClick).not.toHaveBeenCalled();
+    expect(b.onClick).toHaveBeenCalledTimes(1);
   });
 });

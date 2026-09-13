@@ -7,6 +7,7 @@ import * as dialogs from '../dialogs.js';
 import * as sound from '../sound.js';
 import * as leaderboard from '../leaderboard.js';
 import { shareCard } from '../shareImage.js';
+import { createPressTracker, hitTest } from '../input.js';
 import { buildShareText } from '../dailyMeta.js';
 import { setScene } from '../main.js';
 import { LEVELS } from '../levels.js';
@@ -28,11 +29,14 @@ let lbToken = 0;
 // Back → Forward would POST the same score again: a duplicate row and one of
 // the three daily submissions per IP burnt.
 let submittedFor = null;
+// Pending press for the release-activated Share button (input.createPressTracker).
+const press = createPressTracker();
 
 export function enter(a = {}) {
   args = a || {};
   document.body.className = '';
   buttons = [];
+  press.cancel();
   lb = null;
   // End-of-run audio sting matched to the emotional beat.
   if (args.outcome === 'lose') sound.loseThud();
@@ -143,7 +147,8 @@ export function draw() {
 
   let ay = box.buttonsY;
   for (const action of actions) {
-    drawHitButton(box.buttonX, ay, box.buttonW, box.buttonH, action.label, action.onClick);
+    drawHitButton(box.buttonX, ay, box.buttonW, box.buttonH, action.label, action.onClick,
+      { activateOnUp: action.activateOnUp });
     ay += box.buttonH + box.buttonGap;
   }
 
@@ -153,7 +158,7 @@ export function draw() {
 
 function buildActions() {
   const actions = [];
-  const add = (label, onClick) => actions.push({ label, onClick });
+  const add = (label, onClick, opts) => actions.push({ label, onClick, ...opts });
 
   if (args.mode === 'classic' && args.outcome === 'win' && args.level < LEVELS.length) {
     add(i18n.t('common.nextLevel'), () => setScene('gameClassic', { level: args.level + 1 }));
@@ -174,7 +179,9 @@ function buildActions() {
       add(i18n.t('common.retry'), () => setScene('gamePuzzle', { puzzle: args.puzzleNum }));
     }
   } else if (args.mode === 'daily') {
-    add(i18n.t('common.share'), shareDaily);
+    // Share hits navigator.share / the clipboard, which need user activation —
+    // a touch pointerdown doesn't grant it, so fire on the release of the tap.
+    add(i18n.t('common.share'), shareDaily, { activateOnUp: true });
     add(i18n.t('result.viewHistory'), () => setScene('dailyHistory'));
   }
   add(i18n.t('common.title'), () => setScene('title'));
@@ -284,15 +291,16 @@ async function shareDaily() {
   }
 }
 
-function drawHitButton(x, y, w, h, label, onClick) {
-  render.drawHitButton(x, y, w, h, label, onClick, buttons, cursorX, cursorY);
+function drawHitButton(x, y, w, h, label, onClick, opts) {
+  render.drawHitButton(x, y, w, h, label, onClick, buttons, cursorX, cursorY, opts);
 }
 
 export function onPointer(evt) {
-  if (evt.type !== 'down') return;
+  if (evt.type === 'up') { press.release(evt.x, evt.y); return; }
+  if (evt.type !== 'down') { press.cancel(); return; }   // pointercancel
   for (const b of buttons) {
-    if (evt.x >= b.x && evt.x <= b.x + b.w && evt.y >= b.y && evt.y <= b.y + b.h) {
-      b.onClick();
+    if (hitTest(b, evt.x, evt.y)) {
+      if (b.activateOnUp) press.arm(b); else b.onClick();
       return;
     }
   }

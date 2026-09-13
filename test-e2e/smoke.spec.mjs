@@ -17,13 +17,17 @@
 //      (entry animation completes) and back to title cleans up window.__zen.
 //   5. The save file lands in localStorage under 'gem-match:v1'.
 //   6. The generated service-worker manifest supports a complete offline reload.
-//   7. Zero console errors and zero uncaught page errors across all of it.
+//   7. On an emulated phone (hasTouch), the release-activated buttons run from
+//      a real touchscreen tap: View source opens a popup to the repo, Share
+//      calls navigator.share with the card image, and without a share sheet
+//      the same tap reaches navigator.clipboard.writeText.
+//   8. Zero console errors and zero uncaught page errors across all of it.
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 
@@ -84,6 +88,118 @@ function step(msg) {
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`assertion failed: ${msg}`);
+}
+
+// ---------------------------------------------------------------------------
+// Touch phase: release-activated buttons on an emulated phone.
+// ---------------------------------------------------------------------------
+// On touch, pointerdown is not a user-activation event (pointerup is), so the
+// buttons that hit activation-gated APIs — Share (navigator.share / clipboard)
+// and View source (window.open) — fire on the release of a tap (see
+// input.createPressTracker). Emulate a phone (hasTouch) and prove each action
+// runs from a real touchscreen tap. The platform APIs are stubbed via
+// addInitScript, so this proves the wiring under touch ("the stub was called
+// from a tap"), not the browser's activation policy itself — Playwright
+// launches Chromium with popup blocking off. A minute on a real phone is still
+// worth it after touching this path.
+
+const REPO_URL = 'https://github.com/lucasdaddiego/jeweled';
+
+async function runTouchPhase(browser, base, consoleErrors, pageErrors) {
+  const context = await browser.newContext({
+    ...devices['Pixel 7'],
+    locale: 'en-US',
+    // The routes below must see the page's own fetches (a service worker
+    // would answer them first); the SW is exercised by the desktop phase.
+    serviceWorkers: 'block',
+  });
+  // Keep the network out of it: the popup's github.com navigation gets a stub
+  // page, and the optional leaderboard answers 200 with a body the client maps
+  // to {ok:false} — no block drawn, no console error from a 404.
+  await context.route('https://github.com/**', (route) => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>stub</title>',
+  }));
+  await context.route('**/api/leaderboard/**', (route) => route.fulfill({
+    contentType: 'application/json', body: '{}',
+  }));
+  await context.addInitScript(() => {
+    // A saved player name skips the DOM name-entry modal, which blocks canvas taps.
+    localStorage.setItem('gem-match:v1', JSON.stringify({ profile: { playerName: 'E2E' } }));
+    window.__e2e = { share: [], clipboard: [] };
+    navigator.canShare = () => true;
+    navigator.share = async (data) => { window.__e2e.share.push(Object.keys(data).sort()); };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text) => { window.__e2e.clipboard.push(text); } },
+    });
+  });
+  const page = await context.newPage();
+  page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+  page.on('pageerror', (err) => pageErrors.push(String((err && err.stack) || err)));
+
+  await page.goto(`${base}/`, { waitUntil: 'load', timeout: 15_000 });
+  await page.waitForSelector('#boot-splash', { state: 'detached', timeout: 15_000 });
+  await page.waitForFunction(() => window.__game && window.__game.clockMs() > 600, null, { timeout: 10_000 });
+  const vp = page.viewportSize();
+  step(`touch context booted (Pixel 7 descriptor, ${vp.width}x${vp.height}, hasTouch)`);
+
+  // Two painted frames so the scene's hit rects reflect the current screen.
+  const settle = () => page.evaluate(() =>
+    new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  // --- Title → View source (window.open → popup) ------------------------------
+  // title.js draws the link label at x=10 with its baseline at h - 6 - sab and
+  // a 13px-tall hit rect above it; tap a few px in from its left edge.
+  const link = await page.evaluate(async () => {
+    const render = await import('/src/render.js');
+    const sab = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0;
+    return { x: 16, y: render.getViewport().h - 6 - sab - 6 };
+  });
+  const popupPromise = page.waitForEvent('popup', { timeout: 10_000 });
+  await page.touchscreen.tap(link.x, link.y);
+  const popup = await popupPromise;
+  await popup.waitForLoadState('load').catch(() => {});
+  assert(popup.url().startsWith(REPO_URL), `View source popup opened ${REPO_URL} (got ${popup.url()})`);
+  await popup.close().catch(() => {});
+  step('tap on View source → window.open popup to the repo');
+
+  // --- Daily result → Share (navigator.share, then the clipboard rung) -------
+  const today = await page.evaluate(() => import('/src/rng.js').then((m) => m.todayISO()));
+  await page.evaluate((date) => window.__game.setScene('result', {
+    mode: 'daily', date, score: 4321, isNewBest: true, movesUsed: 9, streak: 1,
+  }), today);
+  await settle();
+  // Share is the first action; its rect comes from the same pure layout helper
+  // result.draw() uses (daily + new best = 2 subtitle lines, 3 actions, no board).
+  const share = await page.evaluate(async () => {
+    const [{ computeResultLayout }, render] = await Promise.all([
+      import('/src/scenes/result.js'), import('/src/render.js'),
+    ]);
+    const { w, h } = render.getViewport();
+    const box = computeResultLayout({
+      w, h, safeTop: render.layout.safeTop, subtitleLines: 2, actionCount: 3,
+      leaderboardRows: 0, hasRank: false,
+    });
+    return { x: w / 2, y: box.buttonsY + box.buttonH / 2 };
+  });
+  await page.touchscreen.tap(share.x, share.y);
+  await page.waitForFunction(() => window.__e2e.share.length === 1, null, { timeout: 5_000 });
+  const shared = await page.evaluate(() => window.__e2e.share[0]);
+  assert(shared.includes('files') && shared.includes('text'),
+    `navigator.share got the card image + text (keys: ${shared.join(',')})`);
+  assert((await page.evaluate(() => window.__e2e.clipboard.length)) === 0,
+    'clipboard untouched when the share sheet succeeded');
+  step('tap on Share → navigator.share called with the card image');
+
+  // Without a share sheet the same tap lands on the clipboard rung.
+  await page.evaluate(() => { navigator.share = undefined; navigator.canShare = undefined; });
+  await page.touchscreen.tap(share.x, share.y);
+  await page.waitForFunction(() => window.__e2e.clipboard.length === 1, null, { timeout: 5_000 });
+  const copied = await page.evaluate(() => window.__e2e.clipboard[0]);
+  assert(/4[,.]?321/.test(copied), `clipboard text carries the score (got ${JSON.stringify(copied)})`);
+  step('tap on Share without navigator.share → clipboard.writeText called');
+
+  await context.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +338,10 @@ async function main() {
       'parked Zen save remains available after a fresh offline reload');
     await context.setOffline(false);
     step('service-worker precache completed a full offline reload with save-state intact');
+
+    // --- Touch: release-activated buttons ------------------------------------
+    // Runs before the error tally below so its console/page errors count too.
+    await runTouchPhase(browser, base, consoleErrors, pageErrors);
 
     // --- No errors, ever ---------------------------------------------------------
     assert(consoleErrors.length === 0, `no console errors (got ${consoleErrors.length})`);

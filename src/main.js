@@ -314,6 +314,9 @@ function setupInput() {
       if (current && current.onMove) current.onMove(x, y);
     },
     onUp: (x, y) => {
+      // On touch the release, not the press, is the user-activation event, so
+      // the AudioContext resume inside unlock() only succeeds here on a first tap.
+      sound.unlock();
       if (_swallowNextUp) { _swallowNextUp = false; return; }
       if (dialogs.handlePointer({ type: 'up', x, y })) return;
       if (current && current.onPointer) current.onPointer({ type: 'up', x, y });

@@ -323,6 +323,14 @@ describe('HUD helpers', () => {
     expect(click).toHaveBeenCalledTimes(2);
   });
 
+  it('carries activateOnUp onto the hit rect only when requested', () => {
+    const buttons = [];
+    render.drawHitButton(10, 10, 80, 40, 'b', () => {}, buttons, 0, 0, { activateOnUp: true });
+    render.drawHitButton(10, 60, 80, 40, 'c', () => {}, buttons, 0, 0);
+    expect(buttons[0].activateOnUp).toBe(true);
+    expect('activateOnUp' in buttons[1]).toBe(false);
+  });
+
   it('drawPowerupSlot covers active/hover/charged/empty + ring states', () => {
     // activeMode + partial ring + some charges
     const rect = render.drawPowerupSlot(10, 10, 60, 70, '🔀', '#7c3aed', 2, 0.5, false, true);

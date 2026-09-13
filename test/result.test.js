@@ -67,6 +67,11 @@ function titleCenter(nLines, hasAction) {
   return actionCenter(nLines, actionCount, actionCount - 1);
 }
 const down = (x, y) => result.onPointer({ type: 'down', x, y });
+const up = (x, y) => result.onPointer({ type: 'up', x, y });
+const cancel = () => result.onPointer({ type: 'cancel', x: 0, y: 0 });
+// Share needs user activation, so it fires on the release of a press that
+// started on it (input.createPressTracker): a tap is down + up in place.
+const tap = (x, y) => { down(x, y); up(x, y); };
 const ctxCalls = () => render.ctxRef().__calls;
 const drewText = (s) => ctxCalls().some((c) => c[0] === 'fillText' && c[1][0] === s);
 
@@ -218,7 +223,7 @@ describe('result: daily mode', () => {
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
     const a = firstActionCenter(2, 3);
-    down(a.x, a.y);
+    tap(a.x, a.y);
     await tick();
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ title: 'Jeweled' }));
   });
@@ -229,7 +234,7 @@ describe('result: daily mode', () => {
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
     const a = firstActionCenter(2, 3);
-    down(a.x, a.y);
+    tap(a.x, a.y);
     await tick();
     expect(writeText).toHaveBeenCalled();
     expect(dialogs.alert).toHaveBeenCalled();
@@ -240,7 +245,7 @@ describe('result: daily mode', () => {
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
     const a = firstActionCenter(2, 3);
-    expect(() => down(a.x, a.y)).not.toThrow();
+    expect(() => tap(a.x, a.y)).not.toThrow();
     await tick();
     expect(dialogs.alert).not.toHaveBeenCalled();
   });
@@ -251,9 +256,39 @@ describe('result: daily mode', () => {
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
     const a = firstActionCenter(2, 3);
-    expect(() => down(a.x, a.y)).not.toThrow();
+    expect(() => tap(a.x, a.y)).not.toThrow();
     await tick();
     expect(share).toHaveBeenCalled();
+  });
+
+  it('Share fires on the release of a press that started on it — not on the press itself', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    setShare(share);
+    result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
+    result.draw();
+    const a = firstActionCenter(2, 3);
+    down(a.x, a.y);
+    await tick();
+    expect(share).not.toHaveBeenCalled();                 // pointerdown alone: nothing yet
+    up(a.x, a.y);
+    await tick();
+    expect(share).toHaveBeenCalledTimes(1);               // release on the same button fires
+  });
+
+  it('Share stays silent for a press released elsewhere, started elsewhere, or cancelled', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    setShare(share);
+    result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
+    result.draw();
+    const a = firstActionCenter(2, 3);
+    down(a.x, a.y); up(a.x, a.y + 400);                   // slid off before the release
+    down(a.x, 5); up(a.x, a.y);                           // started on empty space
+    down(a.x, a.y); cancel(); up(a.x, a.y);               // pointercancel in between
+    await tick();
+    expect(share).not.toHaveBeenCalled();
+    tap(a.x, a.y);                                        // a real tap still works
+    await tick();
+    expect(share).toHaveBeenCalledTimes(1);
   });
 
   it('a streak of 2+ appends the streak line to the subtitle', () => {
@@ -385,7 +420,7 @@ describe('result: shareCard outcomes', () => {
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true, streak: 2, movesUsed: 21 });
     result.draw();
     const a = firstActionCenter(3, 3);             // streak adds a 3rd subtitle line
-    down(a.x, a.y);
+    tap(a.x, a.y);
     await tick();
     // The card carries the branded title/footer + the streak line, and the
     // share text includes the moves clause built by buildShareText.
@@ -405,7 +440,7 @@ describe('result: shareCard outcomes', () => {
     result.enter({ mode: 'daily', score: 1234, date: '2026-06-26', isNewBest: true });
     result.draw();
     const a = firstActionCenter(2, 3);
-    down(a.x, a.y);
+    tap(a.x, a.y);
     await tick();
     expect(shareCard).toHaveBeenCalled();
     expect(dialogs.alert).not.toHaveBeenCalled();  // no redundant confirmation
@@ -418,7 +453,7 @@ describe('result: puzzle mode', () => {
     result.draw();
     expect(drewText('🧩 Solved!')).toBe(true);
     const a = firstActionCenter(2);
-    down(a.x, a.y);
+    tap(a.x, a.y);
     expect(setScene).toHaveBeenCalledWith('gamePuzzle', { puzzle: 2 });
   });
 
@@ -426,7 +461,7 @@ describe('result: puzzle mode', () => {
     result.enter({ mode: 'puzzle', outcome: 'win', puzzleNum: PUZZLES.length, score: 200 });
     result.draw();
     const a = firstActionCenter(2);
-    down(a.x, a.y);
+    tap(a.x, a.y);
     expect(setScene).toHaveBeenCalledWith('puzzleSelect');
   });
 
@@ -435,7 +470,7 @@ describe('result: puzzle mode', () => {
     result.draw();
     expect(drewText('Puzzle Failed')).toBe(true);
     const a = firstActionCenter(2);
-    down(a.x, a.y);
+    tap(a.x, a.y);
     expect(setScene).toHaveBeenCalledWith('gamePuzzle', { puzzle: 999 });
   });
 });
