@@ -97,6 +97,17 @@ describe('enter()', () => {
     expect(window.__zen.cascade).toBe(c);
   });
 
+  it('exposes window.__zen off-localhost only for ?debug=1, like main.js (not ?debug=0)', () => {
+    vi.stubGlobal('location', { hostname: 'jeweled.example', search: '?debug=0' });
+    delete window.__zen;
+    zen.enter({});
+    expect(window.__zen).toBeUndefined();
+    zen.exit();
+    vi.stubGlobal('location', { hostname: 'jeweled.example', search: '?debug=1' });
+    zen.enter({});
+    expect(window.__zen).toBeTruthy();
+  });
+
   it('fresh start (narrow): puts the power-up panel at the bottom (76px)', () => {
     setViewport(400, 720, 1);
     render.setupCanvas(); render.buildAtlas();

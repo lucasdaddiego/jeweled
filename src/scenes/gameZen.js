@@ -306,9 +306,11 @@ function handleOverlayModalButton(evt) {
   return false;
 }
 
+// Same predicate as main.js: explicit === '1' so ?debug=0 (or a bare ?debug)
+// doesn't expose the live grid/cascade on the production host.
 function isDebugHost() {
   if (typeof location === 'undefined') return false;
   return location.hostname === 'localhost'
     || location.hostname === '127.0.0.1'
-    || new URLSearchParams(location.search).has('debug');
+    || new URLSearchParams(location.search).get('debug') === '1';
 }

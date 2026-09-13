@@ -280,23 +280,35 @@ describe('result: daily mode', () => {
 
 describe('result: daily leaderboard', () => {
   const LB_TITLE = '🏆 Today’s top scores';
+  // result.js remembers the date it already submitted for this session (a
+  // history re-entry must not POST twice), and the module is shared across
+  // this file — so every test that expects a submit uses its own date.
 
   it('submits the counted run with the profile player name and score', () => {
     storage.saveKey('profile', { playerName: 'Zoe' });
-    result.enter({ mode: 'daily', date: '2026-06-26', score: 777 });
-    expect(leaderboard.submitDaily).toHaveBeenCalledExactlyOnceWith('2026-06-26', 'Zoe', 777);
+    result.enter({ mode: 'daily', date: '2026-07-01', score: 777 });
+    expect(leaderboard.submitDaily).toHaveBeenCalledExactlyOnceWith('2026-07-01', 'Zoe', 777);
     expect(leaderboard.fetchDaily).not.toHaveBeenCalled();
   });
 
   it('falls back to the "Player" name and a 0 score when neither is set', () => {
-    result.enter({ mode: 'daily', date: '2026-06-26' });   // fresh profile: no name
-    expect(leaderboard.submitDaily).toHaveBeenCalledWith('2026-06-26', 'Player', 0);
+    result.enter({ mode: 'daily', date: '2026-07-02' });   // fresh profile: no name
+    expect(leaderboard.submitDaily).toHaveBeenCalledWith('2026-07-02', 'Player', 0);
   });
 
   it('a replay only fetches — it never re-submits', () => {
     result.enter({ mode: 'daily', date: '2026-06-26', score: 55, isReplay: true });
     expect(leaderboard.fetchDaily).toHaveBeenCalledExactlyOnceWith('2026-06-26');
     expect(leaderboard.submitDaily).not.toHaveBeenCalled();
+  });
+
+  it('re-entering via browser history with the original args fetches instead of re-submitting', () => {
+    const args = { mode: 'daily', date: '2026-07-08', score: 321 };
+    result.enter(args);                                    // the counted run: POST once
+    result.exit();
+    result.enter({ ...args });                             // Back → Forward replays the same args
+    expect(leaderboard.submitDaily).toHaveBeenCalledExactlyOnceWith('2026-07-08', 'Player', 321);
+    expect(leaderboard.fetchDaily).toHaveBeenCalledExactlyOnceWith('2026-07-08');
   });
 
   it('makes no request at all without a date (or outside daily mode)', () => {
@@ -321,7 +333,7 @@ describe('result: daily leaderboard', () => {
       entries: [{ name: 'Ana', score: 900 }, { name: 'Bo', score: 800 }],
       rank: 2,
     });
-    result.enter({ mode: 'daily', date: '2026-06-26', score: 800 });
+    result.enter({ mode: 'daily', date: '2026-07-03', score: 800 });
     await tick();
     result.draw();
     expect(drewText(LB_TITLE)).toBe(true);
@@ -333,7 +345,7 @@ describe('result: daily leaderboard', () => {
 
   it('shows the empty-board call to action when there are no entries yet', async () => {
     leaderboard.submitDaily.mockResolvedValueOnce({ ok: true });   // entries omitted → || []
-    result.enter({ mode: 'daily', date: '2026-06-26', score: 10 });
+    result.enter({ mode: 'daily', date: '2026-07-04', score: 10 });
     await tick();
     result.draw();
     expect(drewText(LB_TITLE)).toBe(true);
@@ -344,7 +356,7 @@ describe('result: daily leaderboard', () => {
   it('caps the list at the top 5 entries', async () => {
     const entries = Array.from({ length: 8 }, (_, i) => ({ name: `P${i + 1}`, score: 900 - i }));
     leaderboard.submitDaily.mockResolvedValueOnce({ ok: true, entries, rank: 8 });
-    result.enter({ mode: 'daily', date: '2026-06-26', score: 10 });
+    result.enter({ mode: 'daily', date: '2026-07-05', score: 10 });
     await tick();
     result.draw();
     expect(drewText('5. P5 — 896')).toBe(true);   // entries[4] = 900 - 4
@@ -356,8 +368,8 @@ describe('result: daily leaderboard', () => {
     leaderboard.submitDaily
       .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
       .mockResolvedValueOnce({ ok: true, entries: [{ name: 'Fresh', score: 2 }] });
-    result.enter({ mode: 'daily', date: '2026-06-25', score: 10 });   // first screen: pending
-    result.enter({ mode: 'daily', date: '2026-06-26', score: 20 });   // second screen
+    result.enter({ mode: 'daily', date: '2026-07-06', score: 10 });   // first screen: pending
+    result.enter({ mode: 'daily', date: '2026-07-07', score: 20 });   // second screen
     await tick();                                                     // second response lands
     resolveFirst({ ok: true, entries: [{ name: 'Ghost', score: 1 }] }); // first arrives LATE
     await tick();

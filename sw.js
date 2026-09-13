@@ -4,7 +4,9 @@
 // a deploy until they clear site data. With network-first they always get the
 // latest code when online, and the cache only kicks in as an offline fallback.
 //
-// Bump CACHE on every deploy so old caches are swept on activate.
+// Cache key. scripts/build.sh stamps the commit SHA onto it in dist/sw.js
+// (gem-match-v34-<sha8>), so every build gets a fresh key and the activate
+// handler below sweeps the previous one — no manual bump needed per deploy.
 
 const CACHE = 'gem-match-v34';
 

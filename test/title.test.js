@@ -583,6 +583,21 @@ describe('settings overlay', () => {
     expect(storage.getSettings().language).toBe('es');
   });
 
+  it('Reset progress re-applies the wiped settings to sound and the gem atlas (like Import)', async () => {
+    seedName('Ada');
+    storage.saveKey('settings', { sound: false, gemStyle: 'shapes' });
+    vi.spyOn(dialogs, 'confirm').mockResolvedValue(true);
+    const setEnabled = vi.spyOn(sound, 'setEnabled');
+    const setStyle = vi.spyOn(render, 'setGemStyle').mockImplementation(() => {});
+    const rects = openSettings();
+    down(rects[12]);                                   // Reset progress
+    await flushMicro();
+    expect(storage.getSettings().gemStyle).toBe('color');            // blob wiped
+    expect(setEnabled).toHaveBeenLastCalledWith(true);               // sound back on
+    expect(setStyle).toHaveBeenLastCalledWith('color');              // atlas rebuilt for the default style
+    expect(document.getElementById('name-input-wrap')).toBeTruthy(); // name entry reopens
+  });
+
   it('Reset progress, when confirmed, wipes state and reopens name entry', async () => {
     seedName('Bob');
     vi.spyOn(dialogs, 'confirm').mockResolvedValue(true);

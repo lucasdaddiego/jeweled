@@ -22,7 +22,7 @@ function entry(id, emoji, ring) {
 }
 
 // Special gems first (LINE_H + LINE_V share the one 'line' card), then the
-// four power-up slots with their canonical emoji/ring from POWERUP_META.
+// five power-up slots with their canonical emoji/ring from POWERUP_META.
 export const ENTRIES = [
   entry('line', '↔️', '#8ab4ff'),
   entry('colorBomb', '🔮', '#c084fc'),

@@ -383,6 +383,50 @@ describe('popstate navigation', () => {
   });
 });
 
+describe('parked Zen / Classic runs survive a reload and history re-entry', () => {
+  // Regression: init() used to boot #gameZen / #gameClassic with empty args and
+  // popstate re-entered them without restoreFrom (history.state cannot hold the
+  // grid). The fresh board then hit IDLE → snapshotSaveState() and overwrote the
+  // parked run with a 0-score one — a page refresh mid-game wiped the save.
+  const ZEN_SAVE = { grid: [[1]], score: 4321, milestoneFloor: 0, savedAt: 't' };
+  const CLASSIC_SAVE = { grid: [[2]], level: 47, score: 900, movesLeft: 7 };
+  const state = (zen, classic) => ({ zen: { saveState: zen }, classic: { saveState: classic } });
+
+  afterEach(() => { h.storage.load.mockReset(); });
+
+  it('reloading on #gameZen resumes the parked run instead of starting a fresh board', async () => {
+    h.storage.load.mockReturnValue(state(ZEN_SAVE, null));
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#gameZen', reload: vi.fn() });
+    const replace = vi.spyOn(history, 'replaceState');
+    await boot();
+    expect(h.scenes.gameZen.enter).toHaveBeenCalledWith({ restoreFrom: ZEN_SAVE });
+    // The snapshot never goes into history.state (too big, and one-shot).
+    expect(replace).toHaveBeenLastCalledWith({ scene: 'gameZen', args: {} }, '', '#gameZen');
+  });
+
+  it('boots a fresh run when nothing is parked (PWA shortcut on a clean profile)', async () => {
+    h.storage.load.mockReturnValue(state(null, null));
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#gameClassic', reload: vi.fn() });
+    await boot();
+    expect(h.scenes.gameClassic.enter).toHaveBeenCalledWith({});
+  });
+
+  it('a back/forward re-entry into gameClassic restores the parked level on top of the stored args', async () => {
+    h.storage.load.mockReturnValue(state(null, CLASSIC_SAVE));
+    await boot();
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { scene: 'gameClassic', args: { level: 47 } } }));
+    expect(h.scenes.gameClassic.enter).toHaveBeenCalledWith({ level: 47, restoreFrom: CLASSIC_SAVE });
+  });
+
+  it('leaves stateless scenes alone (no storage lookup for e.g. gameBlitz)', async () => {
+    await boot();
+    h.storage.load.mockClear();
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { scene: 'gameBlitz', args: {} } }));
+    expect(h.scenes.gameBlitz.enter).toHaveBeenCalledWith({});
+    expect(h.storage.load).not.toHaveBeenCalled();
+  });
+});
+
 describe('input routing', () => {
   it('onTapCell routes to the current scene, unless a dialog consumes it', async () => {
     await boot();

@@ -23,6 +23,11 @@ let lb = null;
 // Monotonic token so a slow response from a previous result screen can't
 // clobber this one's state.
 let lbToken = 0;
+// Date whose counted run this session already submitted. Browser history can
+// re-enter this scene with the original args (isReplay:false), so without it a
+// Back → Forward would POST the same score again: a duplicate row and one of
+// the three daily submissions per IP burnt.
+let submittedFor = null;
 
 export function enter(a = {}) {
   args = a || {};
@@ -40,7 +45,9 @@ export function enter(a = {}) {
   if (args.mode === 'daily' && args.date) {
     const token = ++lbToken;
     const name = storage.getProfile().playerName || 'Player';
-    const req = args.isReplay
+    const alreadySubmitted = args.isReplay || submittedFor === args.date;
+    if (!alreadySubmitted) submittedFor = args.date;
+    const req = alreadySubmitted
       ? leaderboard.fetchDaily(args.date)
       : leaderboard.submitDaily(args.date, name, args.score | 0);
     req.then(res => { if (token === lbToken) lb = res; });

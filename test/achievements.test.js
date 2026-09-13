@@ -327,3 +327,14 @@ describe('hydrateUnshownToasts (re-queue owed toasts on load)', () => {
     expect(ach.summary().unlocked).toBe(0);
   });
 });
+
+describe('malformed persisted achievements blob', () => {
+  // Regression: an import code with achievements: {} used to pass storage's
+  // shape check untouched, and the first getState() threw on
+  // Object.keys(undefined) — inside setScene → gameZen.enter, freezing the app.
+  it('runs on backfilled unlocked/counters instead of throwing', async () => {
+    const { ach } = await fresh({});
+    expect(unlockedIds(ach)).toEqual([]);
+    expect(() => ach.notifyMode('zen')).not.toThrow();
+  });
+});

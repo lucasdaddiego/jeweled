@@ -400,7 +400,10 @@ function drawSettingsOverlay() {
   drawHitButton(px + 20, ty, panelW - 40, 36, i18n.t('settings.resetProgress'), async () => {
     if (await dialogs.confirm(i18n.t('settings.resetConfirm'))) {
       storage.reset();
+      // Re-derive everything the wiped blob controlled (same as the import path).
       i18n.init();
+      sound.setEnabled(storage.getSettings().sound !== false);
+      render.setGemStyle(storage.getSettings().gemStyle);
       needsNameEntry = true;
       settingsOpen = false;
       showNameEntry();

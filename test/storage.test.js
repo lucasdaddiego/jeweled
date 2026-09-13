@@ -403,6 +403,21 @@ describe('exportString / importString', () => {
     expect(s.powerups.charges.undo).toBe(0);           // whole missing subtree backfilled
   });
 
+  it('guards the achievements subtree like every other key (a malformed import cannot crash unlock)', async () => {
+    const { storage } = await fresh();
+    const WELL_FORMED = { unlocked: {}, counters: { totalMatches: 0 } };
+    expect(storage.importString(codeOf('{"profile":{},"settings":{},"achievements":{}}'))).toEqual({ ok: true });
+    expect(storage.load().achievements).toEqual(WELL_FORMED);          // leaves backfilled
+    expect(storage.importString(codeOf(
+      '{"profile":{},"settings":{},"achievements":{"unlocked":"x","counters":null}}',
+    ))).toEqual({ ok: true });
+    expect(storage.load().achievements).toEqual(WELL_FORMED);          // type mismatches rejected
+    expect(storage.importString(codeOf(
+      '{"profile":{},"settings":{},"achievements":{"unlocked":{"zen1":{"at":"t"}},"counters":{"totalMatches":5}}}',
+    ))).toEqual({ ok: true });
+    expect(storage.load().achievements).toEqual({ unlocked: { zen1: { at: 't' } }, counters: { totalMatches: 5 } });
+  });
+
   it('clears the future-version read-only latch so the import and later saves persist', async () => {
     const future = JSON.stringify({ version: 999, zen: { bestScore: 12345 } });
     const { storage, KEY } = await fresh(future);

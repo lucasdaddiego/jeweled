@@ -270,7 +270,7 @@ function setupHistoryNav() {
     _handlingPopState = true;
     try {
       if (s && s.scene && SCENES[s.scene]) {
-        _swapScene(s.scene, s.args || {});
+        _swapScene(s.scene, withParkedRun(s.scene, s.args || {}));
       } else {
         // No state (initial entry or external nav) → land on title and
         // replaceState so the synthetic landing doesn't leave a stale
@@ -282,6 +282,21 @@ function setupHistoryNav() {
       _handlingPopState = false;
     }
   });
+}
+
+// Zen and Classic park a resumable run in storage; title's Continue passes it
+// back as args.restoreFrom. Re-entering either scene WITHOUT that snapshot —
+// a reload while playing (the URL is #gameZen / #gameClassic), the PWA Zen
+// shortcut, or a back/forward re-entry (history.state can't hold the grid) —
+// must resume the parked run rather than start a fresh board: a fresh board
+// reaches IDLE after its entry animation and snapshotSaveState() overwrites
+// the real save with a 0-score one before the player has touched anything.
+const PARKED_RUN_SCENES = { gameZen: 'zen', gameClassic: 'classic' };
+function withParkedRun(name, args) {
+  const mode = PARKED_RUN_SCENES[name];
+  if (!mode) return args;
+  const saveState = storage.load()[mode].saveState;
+  return saveState ? { ...args, restoreFrom: saveState } : args;
 }
 
 function setupInput() {
@@ -348,7 +363,8 @@ function init() {
   // Bootstrap initial scene. Use replaceState so a single browser-back from title
   // leaves the page rather than re-displaying it. A #hash naming a directly
   // enterable scene (PWA manifest shortcuts: #gameDaily / #gameBlitz / #gameZen)
-  // boots straight into it; game scenes entered this way just start fresh runs.
+  // boots straight into it. Zen/Classic resume a parked run (withParkedRun);
+  // the other game scenes entered this way just start fresh runs.
   storage.load(); // ensure cache is warm
   i18n.init();    // resolve locale from settings/navigator/URL before any scene draws
   sound.setEnabled(storage.getSettings().sound !== false);
@@ -357,7 +373,8 @@ function init() {
     'dailyHistory', 'gallery', 'gameZen', 'gameClassic', 'gameDaily', 'gameBlitz',
   ]);
   const bootHash = (location.hash || '').replace(/^#/, '');
-  setScene(BOOT_SCENES.has(bootHash) ? bootHash : 'title', {}, { replace: true });
+  const bootScene = BOOT_SCENES.has(bootHash) ? bootHash : 'title';
+  setScene(bootScene, withParkedRun(bootScene, {}), { replace: true });
 
   // Flush debounced storage writes synchronously on tab close. Without this,
   // the last ~250ms of changes (typical: end-of-run save) would be lost on

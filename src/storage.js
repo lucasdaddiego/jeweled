@@ -50,6 +50,14 @@ function defaultState() {
     powerups: {
       charges: { shuffle: 0, colorBlast: 0, bombDrop: 0, recolor: 0, undo: 0 },
     },
+    // Owned by src/achievements.js; listed here so deepMerge's type guards
+    // cover it like every other subtree. Without a default, an import code or
+    // hand-edited blob with achievements: {} (or unlocked: "x") passed straight
+    // through and the next unlock()/bumpCounter() threw a TypeError.
+    achievements: {
+      unlocked: {},                       // { [id]: { at, shownAt } }
+      counters: { totalMatches: 0 },
+    },
   };
 }
 
