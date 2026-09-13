@@ -10,6 +10,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./test/setup.js'],
     include: ['test/**/*.test.js'],
+    // Node >= 25 ships Web Storage on by default, but `globalThis.localStorage`
+    // is an accessor that yields undefined unless --localstorage-file is set.
+    // Vitest's jsdom environment only copies window properties that are absent
+    // from the Node global, so that accessor shadows jsdom's Storage and every
+    // localStorage call throws. Disabling Node's implementation in the test
+    // workers restores jsdom's (a no-op on Node 24, where it is off by default).
+    execArgv: ['--no-experimental-webstorage'],
     clearMocks: true,
     restoreMocks: true,
     coverage: {

@@ -62,10 +62,10 @@ python3 -m http.server 8080 --directory dist
 
 ## Build & deploy
 
-Development and CI use Node.js 24.18.0 LTS, pinned in `.nvmrc`.
+Development and CI use Node.js 24.21.0 LTS, pinned in `.nvmrc`.
 
 ```bash
-nvm use                # selects Node 24.18.0 when using nvm
+nvm use                # selects Node 24.21.0 when using nvm
 npm ci                 # install the exact dev toolchain from package-lock.json
 npm run build          # assemble + SHA-stamp dist/ via scripts/build.sh
 npx wrangler pages dev dist     # preview the built output locally

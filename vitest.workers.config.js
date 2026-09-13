@@ -6,8 +6,9 @@ export default defineConfig({
     cloudflareTest({
       main: './test-worker/leaderboard.worker.js',
       miniflare: {
-        compatibilityDate: '2026-07-25',
-        compatibilityFlags: ['nodejs_compat'],
+        // Same date as wrangler.jsonc. No compatibilityFlags: nodejs_compat is
+        // default from 2026-08-04 and workerd rejects the redundant flag.
+        compatibilityDate: '2026-08-22',
         kvNamespaces: ['LEADERBOARD'],
       },
     }),
