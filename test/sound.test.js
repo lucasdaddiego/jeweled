@@ -448,6 +448,23 @@ describe('zen pad', () => {
     for (const o of c.oscillators) expect(o.stop).toHaveBeenCalledTimes(1);
   });
 
+  // Booting straight into Zen (PWA shortcut, reload on #gameZen) calls
+  // startZenPad() before any gesture, while there is no AudioContext yet.
+  it('a pad requested before the first gesture starts when unlock() creates the context', () => {
+    sound.startZenPad();                                   // no ctx yet: nothing to build
+    const c = unlocked();                                  // the first tap
+    expect(c.oscillators).toHaveLength(3);
+    sound.unlock();                                        // later taps do not stack pads
+    expect(c.oscillators).toHaveLength(3);
+  });
+
+  it('a pad stopped before the first gesture stays silent on unlock()', () => {
+    sound.startZenPad();
+    sound.stopZenPad();                                    // left Zen before any tap
+    const c = unlocked();
+    expect(c.oscillators).toHaveLength(0);
+  });
+
   it('can start a fresh pad after stopping the previous one', () => {
     const c = unlocked();
     sound.startZenPad();

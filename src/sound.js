@@ -15,6 +15,7 @@ let master = null;     // master bus; every sound routes through it
 let enabled = true;    // module-level mute; scenes own the persisted setting
 let noiseBuf = null;   // 1s of white noise, generated once and reused (pooled)
 let pad = null;        // live zen-pad node graph, or null when silent
+let padWanted = false; // Zen asked for the pad; unlock() starts it if ctx was missing
 
 // Create (once) and resume the shared AudioContext. Must be called from a
 // user gesture; safe to call on every gesture — creation and resume are both
@@ -39,6 +40,9 @@ export function unlock() {
     ctx = null;      // constructor failed (too many contexts?) — retry next gesture
     master = null;
   }
+  // Zen entered before any gesture (the PWA "Zen" shortcut, a reload on
+  // #gameZen) asked for the pad while ctx was still null: start it now.
+  if (padWanted && !pad) startPad();
 }
 
 export function setEnabled(v) {
@@ -233,7 +237,12 @@ export const blitzTick = guarded(() => {
 // The 13-cent detune makes the voices beat gently (~0.8 Hz shimmer) and the
 // moving filter keeps the drone from reading as flat. Runs until stopped.
 
-export const startZenPad = guarded(() => {
+export function startZenPad() {
+  padWanted = true;
+  startPad();
+}
+
+const startPad = guarded(() => {
   if (pad) return;   // already humming — start is idempotent
   const t0 = ctx.currentTime;
   const g = ctx.createGain();
@@ -272,6 +281,7 @@ export const startZenPad = guarded(() => {
 // routed through guarded(): it must still work while disabled (setEnabled
 // relies on it) and it is idempotent when nothing is playing.
 export function stopZenPad() {
+  padWanted = false;
   if (!pad) return;
   const p = pad;
   pad = null;   // clear first — even a throwing teardown must not wedge the pad
