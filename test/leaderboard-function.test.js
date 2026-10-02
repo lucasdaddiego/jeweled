@@ -194,6 +194,21 @@ describe('onRequestPost', () => {
     expect((await res.json()).entries[0].name).toBe('Bob');
   });
 
+  it('strips bidi controls and invisible characters from the name', async () => {
+    // RLO (U+202E) would flip the rest of the row; the others render nothing.
+    const name = '\u202eAl\u200bi\u00adce\u2066\u2069\u200e\ufeff\u2028\u3164\u2060';
+    const res = await onRequestPost(postCtx({ name, score: 10 }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).entries[0].name).toBe('Alice');
+  });
+
+  it('keeps the joiners and selectors that emoji and scripts need', async () => {
+    for (const name of ['👩\u200d💻 Ana', 'Leo ❤\ufe0f', 'می\u200cخواهم']) {
+      const res = await onRequestPost(postCtx({ name, score: 10 }));
+      expect((await res.json()).entries[0].name).toBe(name);
+    }
+  });
+
   it('inserts into an existing board sorted desc and reports the true rank', async () => {
     const kv = makeKV({
       [`day:${TODAY}`]: JSON.stringify([{ name: 'A', score: 300 }, { name: 'B', score: 100 }]),
@@ -245,6 +260,8 @@ describe('onRequestPost', () => {
       ['whitespace-only name', { name: '   ', score: 10 }],
       ['name longer than 16 chars', { name: 'a'.repeat(17), score: 10 }],
       ['control-chars-only name', { name: String.fromCharCode(0, 1, 31), score: 10 }],
+      ['bidi/invisible-only name', { name: '\u202e\u200b\u2066\u3164\u00ad', score: 10 }],
+      ['joiner-only name', { name: '\u200d\u200c\ufe0f', score: 10 }],
       ['missing score', { name: 'Bob' }],
       ['string score', { name: 'Bob', score: '500' }],
       ['fractional score', { name: 'Bob', score: 1.5 }],

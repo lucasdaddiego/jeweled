@@ -17,6 +17,19 @@
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NAME_MAX = 16;
+// Removed from names: control characters (C0, DEL, C1); bidi controls (ALM,
+// LRM, RLM, LRE..RLO, LRI..PDI), because an RLO flips the rest of its row;
+// characters that render nothing (soft hyphen, combining grapheme joiner,
+// Hangul fillers, Khmer inherent vowels, Mongolian vowel separator, zero-width
+// space, word joiner, invisible operators, deprecated format controls, BOM,
+// interlinear annotation marks); and the line/paragraph separators. ZWJ, ZWNJ,
+// variation selectors and tag characters stay: emoji sequences and scripts
+// such as Persian need them.
+const NAME_STRIP_RE = /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\u3164\ufeff\uffa0\ufff9-\ufffb]/g;
+// A name needs one character that is not space, a format character (the kept
+// joiners) or a combining mark (variation selectors): a name of joiners alone
+// shows nothing.
+const NAME_VISIBLE_RE = /[^\p{White_Space}\p{Cf}\p{M}]/u;
 const SCORE_MAX = 1_000_000;
 const TOP_STORED = 100;                        // entries kept per day
 const TOP_RETURNED = 50;                       // entries returned per request
@@ -115,10 +128,13 @@ export async function onRequestPost(context) {
     try { body = await context.request.json(); } catch { return json({ error: 'bad body' }, 400); }
     if (!body || typeof body !== 'object') return json({ error: 'bad body' }, 400);
 
-    // Name: strip control characters (C0, DEL, C1), then trim, then 1..16.
+    // Name: strip control, bidi and invisible characters (NAME_STRIP_RE), then
+    // trim, then 1..16 and at least one visible character.
     if (typeof body.name !== 'string') return json({ error: 'bad name' }, 400);
-    const name = body.name.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
-    if (name.length < 1 || name.length > NAME_MAX) return json({ error: 'bad name' }, 400);
+    const name = body.name.replace(NAME_STRIP_RE, '').trim();
+    if (name.length < 1 || name.length > NAME_MAX || !NAME_VISIBLE_RE.test(name)) {
+      return json({ error: 'bad name' }, 400);
+    }
 
     const score = body.score;
     if (!Number.isInteger(score) || score < 0 || score > SCORE_MAX) {

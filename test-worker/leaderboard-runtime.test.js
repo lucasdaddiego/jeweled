@@ -57,6 +57,19 @@ describe('leaderboard Pages Function in workerd', () => {
     expect(blocked.status).toBe(429);
   });
 
+  it('strips bidi and invisible characters from names in workerd', async () => {
+    const post = (name) => exports.default.fetch(endpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '192.0.2.7' },
+      body: JSON.stringify({ name, score: 5 }),
+    });
+    const ok = await post('\u202eEve\u200b\u2066');
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).entries[0].name).toBe('Eve');
+    const blank = await post('\u200d\u3164\u202e');
+    expect(blank.status).toBe(400);
+  });
+
   it('rejects impossible calendar keys before touching KV', async () => {
     const response = await exports.default.fetch(endpoint('2026-02-29'));
     expect(response.status).toBe(400);
