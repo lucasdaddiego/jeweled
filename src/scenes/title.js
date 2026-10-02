@@ -13,6 +13,7 @@ import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
 import { BUILD } from '../build.js';
 import { createPressTracker, hitTest } from '../input.js';
+import { startNewRun } from '../parkedRun.js';
 
 // Public source repository — linked from the title footer.
 const REPO_URL = 'https://github.com/lucasdaddiego/jeweled';
@@ -138,7 +139,8 @@ export function draw() {
     const subtitle = state.zen.bestScore > 0
       ? i18n.t('title.zenBest', { score: i18n.formatNumber(state.zen.bestScore) })
       : i18n.t('title.zenEndless');
-    drawHitButton(x, y, btnW, btnH, i18n.t('title.zen'), () => setScene('gameZen'), { subtitle });
+    drawHitButton(x, y, btnW, btnH, i18n.t('title.zen'),
+      () => startNewRun('zen', () => setScene('gameZen')), { subtitle });
     y += btnH + btnGap;
   }
   // Classic

@@ -51,6 +51,10 @@ const en = {
   'title.continueSubtitleClassic': 'L{level} · {score}',
   'title.continueSubtitleZen':     '{score} pts',
   'title.streak':          'streak',
+  // Fresh run over a parked one (src/parkedRun.js)
+  'parked.discardZen':     'Start a new Zen run? Your parked run ({score} pts) will be lost.',
+  'parked.discardClassic': 'Start a new level? Your parked run (level {level}, {score} pts) will be lost.',
+  'parked.newRun':         'New run',
   'title.viewSource':      'View source',
   'title.zen':             '🧘  Zen',
   'title.classic':         '🎯  Classic',
@@ -383,6 +387,9 @@ const es = {
   'title.continueSubtitleClassic': 'L{level} · {score}',
   'title.continueSubtitleZen':     '{score} pts',
   'title.streak':          'racha',
+  'parked.discardZen':     '¿Empezar una partida Zen nueva? Se perderá tu partida guardada ({score} pts).',
+  'parked.discardClassic': '¿Empezar un nivel nuevo? Se perderá tu partida guardada (nivel {level}, {score} pts).',
+  'parked.newRun':         'Partida nueva',
   'title.viewSource':      'Ver código',
   // Mode chips stay branded English by design.
   'title.zenBest':         'Mejor: {score}',

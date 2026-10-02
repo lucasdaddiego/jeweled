@@ -6,6 +6,8 @@ vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn() }));
 
 import * as render from '../src/render.js';
 import * as storage from '../src/storage.js';
+import * as dialogs from '../src/dialogs.js';
+import * as i18n from '../src/i18n.js';
 import { setScene } from '../src/main.js';
 import { pageCount, pageOfLevel } from '../src/levels.js';
 import * as ls from '../src/scenes/levelSelect.js';
@@ -90,6 +92,45 @@ describe('levelSelect: tiles', () => {
     const c = tileCenter(1, 1);
     down(c.x, c.y);
     expect(setScene).toHaveBeenCalledWith('gameClassic', { level: 1 });
+  });
+
+  it('a new level over a parked Classic run asks first; Cancel keeps the run', async () => {
+    const parked = { level: 7, score: 4321, savedAt: '2026-06-20T10:00:00.000Z' };
+    storage.load().classic.saveState = parked;
+    const confirm = vi.spyOn(dialogs, 'confirm').mockResolvedValue(false);
+    ls.enter();
+    ls.draw();
+    const c = tileCenter(1, 1);
+    down(c.x, c.y);
+    expect(confirm).toHaveBeenCalledWith(
+      i18n.t('parked.discardClassic', { level: 7, score: i18n.formatNumber(4321) }),
+      { confirmLabel: i18n.t('parked.newRun') },
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(setScene).not.toHaveBeenCalled();
+    expect(storage.load().classic.saveState).toBe(parked);
+  });
+
+  it('the parked-run question shows 0 for a snapshot without a score', () => {
+    storage.load().classic.saveState = { level: 2 };
+    const confirm = vi.spyOn(dialogs, 'confirm').mockResolvedValue(false);
+    ls.enter();
+    ls.draw();
+    const c = tileCenter(1, 1);
+    down(c.x, c.y);
+    expect(confirm.mock.calls[0][0]).toBe(i18n.t('parked.discardClassic', { level: 2, score: i18n.formatNumber(0) }));
+  });
+
+  it('a new level over a parked Classic run starts once confirmed and drops the run', async () => {
+    storage.load().classic.saveState = { level: 7, score: 1, savedAt: '2026-06-20T10:00:00.000Z' };
+    vi.spyOn(dialogs, 'confirm').mockResolvedValue(true);
+    ls.enter();
+    ls.draw();
+    const c = tileCenter(1, 1);
+    down(c.x, c.y);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(setScene).toHaveBeenCalledWith('gameClassic', { level: 1 });
+    expect(storage.load().classic.saveState).toBeNull();
   });
 
   it('tapping a locked tile does nothing (not registered as a button)', () => {

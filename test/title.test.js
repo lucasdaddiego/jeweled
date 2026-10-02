@@ -323,6 +323,48 @@ describe('draw — content branches', () => {
     expect(setScene).toHaveBeenCalledWith('gameClassic', { restoreFrom: st.classic.saveState });
   });
 
+  it('Zen over a hidden older parked Zen run asks first; Cancel keeps the run', async () => {
+    const st = seedName('Ada');
+    const parked = { score: 1234, savedAt: '2026-06-01T10:00:00.000Z' };
+    st.zen.saveState = parked;
+    st.classic.saveState = { level: 7, score: 50, savedAt: '2026-06-20T10:00:00.000Z' };
+    const confirm = vi.spyOn(dialogs, 'confirm').mockResolvedValue(false);
+    title.enter();
+    title.draw();
+    down(rectByLabel(i18n.t('title.zen')));
+    // The fresh run would overwrite the parked one on its first idle snapshot,
+    // and Continue only shows the newer Classic run: the player must agree first.
+    expect(confirm).toHaveBeenCalledWith(
+      i18n.t('parked.discardZen', { score: i18n.formatNumber(1234) }),
+      { confirmLabel: i18n.t('parked.newRun') },
+    );
+    await flushMicro();
+    expect(setScene).not.toHaveBeenCalled();
+    expect(storage.load().zen.saveState).toBe(parked);
+  });
+
+  it('Zen over a parked Zen run starts fresh and drops the run once confirmed', async () => {
+    const st = seedName('Ada');
+    st.zen.saveState = { score: 99, savedAt: '2026-06-01T10:00:00.000Z' };
+    vi.spyOn(dialogs, 'confirm').mockResolvedValue(true);
+    title.enter();
+    title.draw();
+    down(rectByLabel(i18n.t('title.zen')));
+    await flushMicro();
+    expect(setScene).toHaveBeenCalledWith('gameZen');
+    expect(storage.load().zen.saveState).toBeNull();
+  });
+
+  it('Zen with nothing parked starts at once, no dialog', () => {
+    seedName('Ada');
+    const confirm = vi.spyOn(dialogs, 'confirm');
+    title.enter();
+    title.draw();
+    down(rectByLabel(i18n.t('title.zen')));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(setScene).toHaveBeenCalledWith('gameZen');
+  });
+
   it('Continue: an unstamped saveState loses to any stamped one (savedAt || "")', () => {
     const st = seedName('Ada');
     st.profile.lastPlayedMode = 'blitz';

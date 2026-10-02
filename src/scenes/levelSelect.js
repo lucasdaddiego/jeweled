@@ -4,6 +4,7 @@ import * as render from '../render.js';
 import * as storage from '../storage.js';
 import * as i18n from '../i18n.js';
 import { setScene } from '../main.js';
+import { startNewRun } from '../parkedRun.js';
 import { LEVELS, LEVELS_PER_PAGE, pageCount, pageOfLevel } from '../levels.js';
 
 let buttons = [];
@@ -130,7 +131,12 @@ function drawLevelTile(x, y, w, h, ln, data, locked) {
     }
   }
   ctx.restore();
-  if (!locked) buttons.push({ x, y, w, h, onClick: () => setScene('gameClassic', { level: ln }) });
+  if (!locked) {
+    buttons.push({
+      x, y, w, h,
+      onClick: () => startNewRun('classic', () => setScene('gameClassic', { level: ln })),
+    });
+  }
 }
 
 function drawPaginationButton(x, y, w, h, label, enabled, onClick) {
