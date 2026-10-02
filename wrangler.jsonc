@@ -4,7 +4,7 @@
   // and workerd rejects a flag its compatibility date already enables ("became
   // the default ... so does not need to be specified"). Keep this date in sync
   // with vitest.workers.config.js so the tests run against the same runtime.
-  "compatibility_date": "2026-08-22",
+  "compatibility_date": "2026-09-29",
   // No "observability" block here: it is a Workers-only key, and wrangler fails
   // Pages config validation outright when it is present ("Configuration file for
   // Pages projects does not support 'observability'"), which blocked every deploy.
