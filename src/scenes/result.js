@@ -51,6 +51,11 @@ export function enter(a = {}) {
     const name = storage.getProfile().playerName || 'Player';
     const alreadySubmitted = args.isReplay || submittedFor === args.date;
     if (!alreadySubmitted) submittedFor = args.date;
+    // MUST be guarded before the leaderboard goes live (the LEADERBOARD KV
+    // is not bound yet): submittedFor lives in memory only, so Back, reload,
+    // then Forward re-enters this scene with the original args and posts the
+    // same score again. Persist the posted date, or let the server keep one
+    // row per player and day.
     const req = alreadySubmitted
       ? leaderboard.fetchDaily(args.date)
       : leaderboard.submitDaily(args.date, name, args.score | 0);
