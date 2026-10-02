@@ -3,15 +3,26 @@
 let canvas = null;
 let ctx = null;
 let enabled = false;
+let owner = null;   // the Zen run the strokes belong to (see claim)
 
 export function init(width = 1080, height = 1080) {
   // Idempotent: reuse the existing OffscreenCanvas across Zen sessions to
   // avoid re-allocating a fresh ~4.5MB buffer (1080×1080×4 bytes) each enter.
+  // A reused layer keeps its strokes: claim() decides whether they stay.
   // Re-init with different dimensions allocates fresh.
   if (!canvas || canvas.width !== width || canvas.height !== height) {
     canvas = new OffscreenCanvas(width, height);
     ctx = canvas.getContext('2d');
+    clear();
   }
+}
+
+// Tie the layer to one Zen run. The same run, parked and resumed in this page,
+// keeps its strokes. Any other run starts blank. (The layer lives in memory
+// only: a run resumed after a reload starts a new painting.)
+export function claim(runId) {
+  if (runId === owner) return;
+  owner = runId;
   clear();
 }
 

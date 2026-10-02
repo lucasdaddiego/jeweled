@@ -200,4 +200,16 @@ describe('drawHintButton', () => {
     d.button.onClick();
     expect(setHint).toHaveBeenCalledTimes(2);
   });
+
+  it('a new scene or run (clearEffects on enter) starts with the hint ready', () => {
+    const setHint = vi.fn();
+    const idle = { state: STATE.IDLE, setHint };
+    drawAt(100_000, idle).button.onClick();          // used: cooling for 15s
+    expect(drawAt(105_000, idle).disabled).toBe(true);
+    clearEffects();                                   // every game scene's enter()
+    const d = drawAt(105_000, idle);
+    expect(d.disabled).toBe(false);
+    d.button.onClick();
+    expect(setHint).toHaveBeenCalledTimes(2);
+  });
 });

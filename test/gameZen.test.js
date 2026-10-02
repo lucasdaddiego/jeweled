@@ -144,6 +144,31 @@ describe('paintingMode true', () => {
     zen.enter({});
     expect(painting.isEnabled()).toBe(true);
   });
+
+  it('a parked run resumed in this page keeps its painting; a new run starts blank', () => {
+    storage.saveKey('settings', { paintingMode: true });
+    const claim = vi.spyOn(painting, 'claim');
+    zen.enter({});
+    runToIdle(zen, debugHud.activeCascade());
+    zen.exit();                                       // Back: park the run
+    const ss = storage.load().zen.saveState;
+    expect(ss.runId).toEqual(expect.any(String));
+    expect(claim).toHaveBeenLastCalledWith(ss.runId);
+    zen.enter({ restoreFrom: ss });                   // Continue
+    expect(claim).toHaveBeenLastCalledWith(ss.runId); // same owner: strokes kept
+    runToIdle(zen, debugHud.activeCascade());
+    zen.exit();
+    expect(storage.load().zen.saveState.runId).toBe(ss.runId);
+    zen.enter({});                                    // a new run
+    expect(claim.mock.lastCall[0]).not.toBe(ss.runId);
+  });
+
+  it('a snapshot from before run ids gets a fresh id (blank painting, as before)', () => {
+    storage.saveKey('settings', { paintingMode: true });
+    const claim = vi.spyOn(painting, 'claim');
+    zen.enter({ restoreFrom: { grid: plantedSerial(), score: 10 } });
+    expect(claim.mock.lastCall[0]).toEqual(expect.any(String));
+  });
 });
 
 describe('cascade callbacks', () => {

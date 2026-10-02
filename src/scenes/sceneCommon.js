@@ -37,11 +37,14 @@ export function tickEffects(dt) {
 // draw() runs before update() on the first frame, and these pools are
 // module-level singletons that otherwise persist across scene changes. The
 // per-pool clear() helpers already exist; nothing else invokes them.
+// The hint cooldown is per scene and run too: a hint used in one run must not
+// grey out the button when the next run starts.
 export function clearEffects() {
   particles.clear();
   floaters.clear();
   waves.clear();
   bolts.clear();
+  _lastHintAt = -Infinity;
 }
 
 // Install the presentation/achievement/audio callbacks shared by every game

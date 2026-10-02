@@ -27,6 +27,13 @@ let buttons = [];
 let cursorX = 0, cursorY = 0;
 let runEndedScore = null; // set when user clicks End Run
 let milestoneFloor = 0;
+// Identity of the run across park/resume (stored in saveState). The painting
+// layer keeps its strokes only for the run that drew them.
+let runId = null;
+
+function newRunId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 // Undo power-up. curIdle always holds the latest idle board; a committed
 // move shifts it into prevIdle (the pre-move state) BEFORE the move resolves.
@@ -78,16 +85,19 @@ export function enter(args = {}) {
     cascade.score = args.restoreFrom.score || 0;
     cascade.scoreShown = cascade.score;
     milestoneFloor = args.restoreFrom.milestoneFloor ?? powerups.milestoneFloorForScore(cascade.score);
+    // Snapshots from before run ids get a fresh one (a blank painting, as before).
+    runId = args.restoreFrom.runId || newRunId();
   } else {
     grid = createBoard();
     cascade = new Cascade(grid, { mode: 'zen' });
     milestoneFloor = 0;
     entryAnim = true;
+    runId = newRunId();
   }
   if (storage.getSettings().paintingMode) {
     painting.init();
     painting.setEnabled(true);
-    painting.clear();
+    painting.claim(runId);   // a resumed run keeps its strokes
   } else {
     painting.setEnabled(false);
   }
@@ -190,6 +200,7 @@ function snapshotSaveState() {
       score: cascade.score,
       milestoneFloor,
       pendingMilestones: overlay.getPendingMilestones(),
+      runId,
       savedAt: new Date().toISOString(),
     },
   });

@@ -95,6 +95,33 @@ describe('clear', () => {
   });
 });
 
+describe('init + claim (one painting per Zen run)', () => {
+  it('a reused layer keeps its strokes on init()', async () => {
+    const made = installOffscreen();
+    const painting = await fresh();
+    painting.init(100, 100);
+    const calls = made[0]._ctx.__calls;
+    calls.length = 0;
+    painting.init(100, 100);                 // same dims: reuse, no clear
+    expect(calls.some((c) => c[0] === 'clearRect')).toBe(false);
+  });
+
+  it('claim() keeps the strokes for the same run and clears for any other', async () => {
+    const made = installOffscreen();
+    const painting = await fresh();
+    painting.init(100, 100);
+    const calls = made[0]._ctx.__calls;
+    calls.length = 0;
+    painting.claim('run-a');                 // first owner: blank start
+    expect(calls).toEqual([['clearRect', [0, 0, 100, 100]]]);
+    calls.length = 0;
+    painting.claim('run-a');                 // parked + resumed: keep
+    expect(calls).toEqual([]);
+    painting.claim('run-b');                 // another run: blank
+    expect(calls).toEqual([['clearRect', [0, 0, 100, 100]]]);
+  });
+});
+
 describe('setEnabled / isEnabled', () => {
   it('reflects the toggled flag', async () => {
     const painting = await fresh();
