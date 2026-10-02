@@ -76,14 +76,23 @@ fi
 # (which soft-200s every unknown path with the app shell) to true 404s —
 # _redirects "404" status rules are silently unsupported by Pages, so this
 # file IS the not-found defense.
+# Its styles live in /404.css: the /* CSP in _headers (style-src 'self')
+# blocks an inline <style>, which left the live page unstyled.
 cat > dist/404.html <<'EOF'
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>404 — Jeweled</title>
-<style>body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0e0a1f;color:#f3f0ff;font-family:-apple-system,system-ui,sans-serif}a{color:#d59bff}</style></head>
+<link rel="stylesheet" href="/404.css"></head>
 <body><h1>404</h1><p>Nothing here. <a href="/">Play Jeweled instead?</a></p></body>
 </html>
 EOF
+cat > dist/404.css <<'EOF'
+body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0e0a1f;color:#f3f0ff;font-family:-apple-system,system-ui,sans-serif}a{color:#d59bff}
+EOF
+if grep -q '<style' dist/404.html; then
+  echo "Error: dist/404.html has an inline <style>; the CSP (style-src 'self') blocks it." >&2
+  exit 1
+fi
 
 # Legacy _redirects kept only as documentation of intent; Pages ignores 404
 # status rules, so dist/404.html above is the actual mechanism.
