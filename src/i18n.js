@@ -55,6 +55,9 @@ const en = {
   'parked.discardZen':     'Start a new Zen run? Your parked run ({score} pts) will be lost.',
   'parked.discardClassic': 'Start a new level? Your parked run (level {level}, {score} pts) will be lost.',
   'parked.newRun':         'New run',
+  // One active tab (src/tabLock.js)
+  'tab.elsewhere':          'Jeweled is open in another tab. Only one tab can save progress, so this one is paused.',
+  'tab.playHere':           'Play here',
   'title.viewSource':      'View source',
   'title.zen':             '🧘  Zen',
   'title.classic':         '🎯  Classic',
@@ -390,6 +393,8 @@ const es = {
   'parked.discardZen':     '¿Empezar una partida Zen nueva? Se perderá tu partida guardada ({score} pts).',
   'parked.discardClassic': '¿Empezar un nivel nuevo? Se perderá tu partida guardada (nivel {level}, {score} pts).',
   'parked.newRun':         'Partida nueva',
+  'tab.elsewhere':          'Jeweled está abierto en otra pestaña. Solo una pestaña puede guardar el progreso, así que esta está en pausa.',
+  'tab.playHere':           'Jugar aquí',
   'title.viewSource':      'Ver código',
   // Mode chips stay branded English by design.
   'title.zenBest':         'Mejor: {score}',

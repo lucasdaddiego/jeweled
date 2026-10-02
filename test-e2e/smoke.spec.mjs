@@ -21,7 +21,10 @@
 //      a real touchscreen tap: View source opens a popup to the repo, Share
 //      calls navigator.share with the card image, and without a share sheet
 //      the same tap reaches navigator.clipboard.writeText.
-//   8. Zero console errors and zero uncaught page errors across all of it.
+//   8. One active tab: a second tab blocks and cannot write over the first
+//      tab's save, takes over when the first tab closes, and "Play here" moves
+//      the save to the tab that asks.
+//   9. Zero console errors and zero uncaught page errors across all of it.
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -203,6 +206,56 @@ async function runTouchPhase(browser, base, consoleErrors, pageErrors) {
 }
 
 // ---------------------------------------------------------------------------
+// One active tab: two pages of one context share localStorage and Web Locks.
+// ---------------------------------------------------------------------------
+
+async function runTabLockPhase(browser, base, consoleErrors, pageErrors) {
+  const context = await browser.newContext({ viewport: { width: 900, height: 700 }, serviceWorkers: 'block' });
+  await context.addInitScript(() => {
+    if (!localStorage.getItem('gem-match:v1')) {
+      localStorage.setItem('gem-match:v1', JSON.stringify({ profile: { playerName: 'E2E' } }));
+    }
+  });
+  const open = async () => {
+    const page = await context.newPage();
+    page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+    page.on('pageerror', (err) => pageErrors.push(String((err && err.stack) || err)));
+    await page.goto(`${base}/`, { waitUntil: 'load', timeout: 15_000 });
+    await page.waitForFunction(() => window.__game, null, { timeout: 10_000 });
+    return page;
+  };
+  const tabState = (page, want, timeout = 5_000) => page.waitForFunction(
+    (w) => window.__game.tabState() === w, want, { timeout, polling: 100 });
+  const best = () => first.evaluate(() => JSON.parse(localStorage.getItem('gem-match:v1')).zen.bestScore);
+
+  const first = await open();
+  await tabState(first, 'owner');
+  const second = await open();
+  await tabState(second, 'blocked');
+  step('second tab blocks while the first tab owns the save');
+
+  await first.evaluate(() => { window.__game.storage.saveKey('zen', { bestScore: 4242 }); window.__game.storage.flush(); });
+  await second.evaluate(() => { window.__game.storage.saveKey('zen', { bestScore: 1 }); window.__game.storage.flush(); });
+  assert((await best()) === 4242, `blocked tab did not overwrite the save (bestScore ${await best()})`);
+  step('blocked tab writes nothing over the owner\'s progress');
+
+  await first.close({ runBeforeUnload: true });
+  await tabState(second, 'owner', 10_000);
+  const adopted = await second.evaluate(() => window.__game.storage.load().zen.bestScore);
+  assert(adopted === 4242, `takeover adopted the closed tab's save (got ${adopted})`);
+  step('first tab closed → second tab took over with its latest save');
+
+  const third = await open();
+  await tabState(third, 'blocked');
+  await third.keyboard.press('Enter');          // "Play here" is the dialog's OK
+  await tabState(third, 'owner');
+  await tabState(second, 'blocked');
+  step('"Play here" moved the save to the asking tab; the old owner blocked');
+
+  await context.close();
+}
+
+// ---------------------------------------------------------------------------
 // The test.
 // ---------------------------------------------------------------------------
 
@@ -342,6 +395,9 @@ async function main() {
     // --- Touch: release-activated buttons ------------------------------------
     // Runs before the error tally below so its console/page errors count too.
     await runTouchPhase(browser, base, consoleErrors, pageErrors);
+
+    // --- One active tab --------------------------------------------------------
+    await runTabLockPhase(browser, base, consoleErrors, pageErrors);
 
     // --- No errors, ever ---------------------------------------------------------
     assert(consoleErrors.length === 0, `no console errors (got ${consoleErrors.length})`);

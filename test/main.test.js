@@ -41,6 +41,7 @@ const h = vi.hoisted(() => {
       draw: vi.fn(), isOpen: vi.fn(() => false), handlePointer: vi.fn(() => false),
       onMove: vi.fn(), consumeBack: vi.fn(() => false),
     },
+    tabLock: { start: vi.fn(), release: vi.fn(), reacquire: vi.fn(), getState: vi.fn(() => 'owner') },
     debugHud: {
       counters: { findMatches: 3, drawBoard: 5 },
       resetFrameCounters: vi.fn(), recordFrame: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock('../src/toasts.js', () => h.toasts);
 vi.mock('../src/i18n.js', () => h.i18n);
 vi.mock('../src/dialogs.js', () => h.dialogs);
 vi.mock('../src/debugHud.js', () => h.debugHud);
+vi.mock('../src/tabLock.js', () => h.tabLock);
 vi.mock('../src/scenes/title.js', () => h.scenes.title);
 vi.mock('../src/scenes/levelSelect.js', () => h.scenes.levelSelect);
 vi.mock('../src/scenes/gameZen.js', () => h.scenes.gameZen);
@@ -137,6 +139,53 @@ describe('init (auto-runs on import; jsdom readyState=complete, hostname=localho
     window.dispatchEvent(new Event('pagehide'));
     expect(h.achievements.flushPlayTime).toHaveBeenCalled();
     expect(h.storage.flush).toHaveBeenCalled();
+  });
+
+  it('claims the tab lock before the first storage read', async () => {
+    await boot();
+    expect(h.tabLock.start).toHaveBeenCalledTimes(1);
+    expect(h.tabLock.start.mock.invocationCallOrder[0])
+      .toBeLessThan(h.storage.load.mock.invocationCallOrder[0]);
+    expect(window.__game.tabState()).toBe('owner');
+  });
+
+  it('gives the tab lock back on pagehide, after the last flush', async () => {
+    await boot();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(h.tabLock.release).toHaveBeenCalledTimes(1);
+    expect(h.storage.flush.mock.invocationCallOrder.at(-1))
+      .toBeLessThan(h.tabLock.release.mock.invocationCallOrder[0]);
+  });
+
+  it('asks for the tab lock again only when the page returns from the back/forward cache', async () => {
+    await boot();
+    const show = (persisted) => {
+      const e = new Event('pageshow');
+      Object.defineProperty(e, 'persisted', { value: persisted });
+      window.dispatchEvent(e);
+    };
+    show(false);
+    expect(h.tabLock.reacquire).not.toHaveBeenCalled();
+    show(true);
+    expect(h.tabLock.reacquire).toHaveBeenCalledTimes(1);
+  });
+
+  it('a takeover leaves the stale scene before it adopts the disk save, then re-enters title', async () => {
+    const main = await boot();
+    main.setScene('gameZen');
+    const { onTakeover } = h.tabLock.start.mock.calls.at(-1)[0];
+    h.storage.getSettings.mockReturnValue({ sound: false, gemStyle: 'shapes' });
+    const adopt = vi.fn();
+    onTakeover(adopt);
+    // The Zen scene exits (its snapshot lands in the stale copy) before adopt().
+    expect(h.scenes.gameZen.exit.mock.invocationCallOrder[0])
+      .toBeLessThan(adopt.mock.invocationCallOrder[0]);
+    expect(h.i18n.init.mock.invocationCallOrder.at(-1))
+      .toBeGreaterThan(adopt.mock.invocationCallOrder[0]);
+    expect(h.render.setGemStyle).toHaveBeenLastCalledWith('shapes');
+    expect(h.scenes.title.enter.mock.invocationCallOrder.at(-1))
+      .toBeGreaterThan(adopt.mock.invocationCallOrder[0]);
+    expect(location.hash).toBe('#title');
   });
 
   it('does not enable debug off-localhost and exposes no global; frame skips HUD work', async () => {

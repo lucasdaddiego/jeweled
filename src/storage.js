@@ -89,12 +89,21 @@ let cache = null;
 // so the newer blob in localStorage survives untouched for the next reload.
 // Without this guard, saveAll() would clobber the newer blob with defaults.
 let _readOnly = false;
+// Write gate for the one-active-tab lock (src/tabLock.js). 'open' writes as
+// usual. 'held' keeps changes in memory until this tab knows that it owns the
+// save (at boot, before the lock answers). 'closed' drops them: another tab
+// owns the save, and the copy in this tab is stale.
+let _gate = 'open';
+// The save text this tab last read from or wrote to localStorage. When this
+// tab takes over the save and the disk text differs, another tab wrote since.
+let _diskRaw = null;
 
 // With site data blocked (a browser setting), reading window.localStorage
 // itself throws a SecurityError, and `typeof` does not catch a throwing getter.
 function storageAvailable() {
   try { return typeof localStorage !== 'undefined'; } catch { return false; }
 }
+export { storageAvailable as isAvailable };
 
 export function load() {
   if (cache) return cache;
@@ -104,6 +113,7 @@ export function load() {
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
+    _diskRaw = raw;
     if (!raw) {
       cache = defaultState();
       return cache;
@@ -193,14 +203,23 @@ let _saveDirty = false;
 export function saveAll() {
   if (!cache) cache = defaultState();
   if (!storageAvailable()) return;
-  // Refuse to persist over a future-version blob — see _readOnly comment.
-  if (_readOnly) {
+  // Owner not known yet: keep the change until setWriteGate('open').
+  if (_gate === 'held') {
+    _saveDirty = true;
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+    return;
+  }
+  // Refuse to persist over a future-version blob — see _readOnly comment —
+  // or over the save of the tab that owns it (gate closed).
+  if (_readOnly || _gate === 'closed') {
     _saveDirty = false;
     if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
     return;
   }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
+    const json = JSON.stringify(cache);
+    localStorage.setItem(STORAGE_KEY, json);
+    _diskRaw = json;
   } catch (err) {
     console.warn('storage.saveAll failed (quota?):', err);
   }
@@ -243,11 +262,52 @@ export function reset() {
   _saveDirty = false;
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   if (!storageAvailable()) return;
+  // Not the owner (yet): never delete the shared save from here. A held gate
+  // writes the fresh defaults once this tab owns the save.
+  if (_gate !== 'open') {
+    _saveDirty = _gate === 'held';
+    return;
+  }
   try {
     localStorage.removeItem(STORAGE_KEY);
+    _diskRaw = null;
   } catch (err) {
     console.warn('storage.reset failed:', err);
   }
+}
+
+// === One active tab (src/tabLock.js) ===
+
+// Open, hold or close writes. See the _gate comment at the top.
+export function setWriteGate(gate) {
+  _gate = gate;
+  if (gate === 'open') {
+    if (_saveDirty) saveAll();
+  } else if (gate === 'closed') {
+    _saveDirty = false;
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  }
+}
+
+// True when the save on disk is not the text this tab last read or wrote,
+// so another tab wrote it since.
+export function diskChanged() {
+  if (!storageAvailable()) return false;
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== _diskRaw;
+  } catch {
+    return false;   // unreadable store: keep the copy in memory
+  }
+}
+
+// Drop the copy in this tab and read the save again, for a tab that takes
+// over the save from another tab.
+export function reloadFromDisk() {
+  cache = null;
+  _readOnly = false;
+  _saveDirty = false;
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  return load();
 }
 
 // === Save export / import ===

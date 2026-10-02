@@ -9,6 +9,7 @@ import * as toasts from './toasts.js';
 import * as debugHud from './debugHud.js';
 import * as i18n from './i18n.js';
 import * as dialogs from './dialogs.js';
+import * as tabLock from './tabLock.js';
 
 // Scene modules
 import * as title from './scenes/title.js';
@@ -284,6 +285,19 @@ function setupHistoryNav() {
   });
 }
 
+// This tab takes over the save from another tab (src/tabLock.js). The scene on
+// screen ran on a stale copy: leave it first, while writes are still gated off,
+// so its exit snapshot cannot reach the disk. Then read the save again and
+// re-derive what the blob controls (the same steps as a save import).
+function takeOverSave(adopt) {
+  setScene('title', {}, { replace: true });
+  adopt();
+  i18n.init();
+  sound.setEnabled(storage.getSettings().sound !== false);
+  render.setGemStyle(storage.getSettings().gemStyle);
+  setScene('title', {}, { replace: true });
+}
+
 // Zen and Classic park a resumable run in storage; title's Continue passes it
 // back as args.restoreFrom. Re-entering either scene WITHOUT that snapshot —
 // a reload while playing (the URL is #gameZen / #gameClassic), the PWA Zen
@@ -354,6 +368,9 @@ function maybeReloadForServiceWorkerUpdate() {
 }
 
 function init() {
+  // One active tab: claim the shared save before anything can write to it
+  // (load() below may write a migrated blob). See src/tabLock.js.
+  tabLock.start({ onTakeover: takeOverSave });
   render.setupCanvas();
   // Apply the persisted gem style before the first atlas build so the very
   // first frame uses the right glyph set (setGemStyle only rebuilds on change).
@@ -387,6 +404,11 @@ function init() {
       achievements.flushPlayTime();
       storage.flush();
     } catch {}
+    tabLock.release();   // after the last write
+  });
+  // Back from the back/forward cache: ask for the save again.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) tabLock.reacquire();
   });
 
   lastFrameTime = performance.now();
@@ -441,6 +463,7 @@ function init() {
     setLanguage: i18n.setLanguage,
     getLocale: i18n.getLocale,
     isSwUpdateReady: () => _swUpdateReady,
+    tabState: tabLock.getState,
   };
 }
 

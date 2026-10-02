@@ -468,3 +468,112 @@ describe('exportString / importString', () => {
     expect(s.settings.haptic).toBe(false);
   });
 });
+
+// One active tab (src/tabLock.js) drives these: the write gate, the disk check
+// and the reload for a takeover.
+describe('write gate', () => {
+  it('held keeps changes in memory, and open writes them', async () => {
+    const { storage, KEY } = await fresh();
+    storage.load();
+    storage.setWriteGate('held');
+    storage.saveAll();                          // nothing scheduled yet: no timer to clear
+    storage.saveKey('profile', { playerName: 'Ann' });
+    vi.useFakeTimers();
+    storage.saveKey('zen', { bestScore: 3 });   // the debounce timer is cleared by the held write path
+    storage.flush();
+    vi.advanceTimersByTime(1000);
+    expect(localStorage.getItem(KEY)).toBeNull();
+    storage.setWriteGate('open');
+    const saved = JSON.parse(localStorage.getItem(KEY));
+    expect(saved.profile.playerName).toBe('Ann');
+    expect(saved.zen.bestScore).toBe(3);
+  });
+
+  it('open with nothing pending writes nothing', async () => {
+    const { storage, KEY } = await fresh();
+    storage.load();
+    storage.setWriteGate('held');
+    storage.setWriteGate('open');
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('closed drops pending and later writes', async () => {
+    const { storage, KEY } = await fresh(JSON.stringify({ version: 1, profile: { playerName: 'Own' } }));
+    storage.load();
+    vi.useFakeTimers();
+    storage.saveKey('profile', { playerName: 'Stale' });   // debounce timer pending
+    storage.setWriteGate('closed');
+    vi.advanceTimersByTime(1000);
+    storage.saveAll();
+    expect(JSON.parse(localStorage.getItem(KEY)).profile.playerName).toBe('Own');
+    storage.setWriteGate('held');
+    storage.setWriteGate('closed');                         // no timer to clear
+    storage.setWriteGate('open');                           // nothing dirty: still no write
+    expect(JSON.parse(localStorage.getItem(KEY)).profile.playerName).toBe('Own');
+  });
+
+  it('reset() never deletes the shared save while the gate is not open', async () => {
+    const blob = JSON.stringify({ version: 1, profile: { playerName: 'Own' } });
+    const { storage, KEY } = await fresh(blob);
+    storage.load();
+    storage.setWriteGate('closed');
+    storage.reset();
+    expect(localStorage.getItem(KEY)).toBe(blob);
+    storage.setWriteGate('held');
+    storage.reset();
+    expect(localStorage.getItem(KEY)).toBe(blob);
+    storage.setWriteGate('open');                           // held reset: the defaults land now
+    expect(JSON.parse(localStorage.getItem(KEY)).profile.playerName).toBe('');
+  });
+});
+
+describe('diskChanged / reloadFromDisk', () => {
+  it('sees a write by another tab, not this tab\'s own writes', async () => {
+    const { storage, KEY } = await fresh(JSON.stringify({ version: 1, profile: { playerName: 'A' } }));
+    storage.load();
+    expect(storage.diskChanged()).toBe(false);
+    storage.saveKey('profile', { playerName: 'Me' });
+    storage.flush();
+    expect(storage.diskChanged()).toBe(false);
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, profile: { playerName: 'Other' } }));
+    expect(storage.diskChanged()).toBe(true);
+    expect(storage.reloadFromDisk().profile.playerName).toBe('Other');
+    expect(storage.diskChanged()).toBe(false);
+  });
+
+  it('counts a removed save as a change after a reset, and none before any save', async () => {
+    const { storage, KEY } = await fresh();
+    storage.load();
+    expect(storage.diskChanged()).toBe(false);              // nothing on disk, nothing read
+    storage.saveAll();
+    storage.reset();
+    expect(storage.diskChanged()).toBe(false);
+    localStorage.setItem(KEY, '{"version":1}');
+    expect(storage.diskChanged()).toBe(true);
+  });
+
+  it('reloadFromDisk drops pending writes and the read-only latch', async () => {
+    const { storage, KEY } = await fresh(JSON.stringify({ version: 999 }));
+    storage.load();                                         // future blob: read-only session
+    vi.useFakeTimers();
+    storage.saveKey('zen', { bestScore: 9 });
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, zen: { bestScore: 2 } }));
+    expect(storage.reloadFromDisk().zen.bestScore).toBe(2);
+    vi.advanceTimersByTime(1000);
+    expect(JSON.parse(localStorage.getItem(KEY)).zen.bestScore).toBe(2);
+    storage.saveKey('zen', { bestScore: 4 });               // latch cleared: writes again
+    storage.flush();
+    expect(JSON.parse(localStorage.getItem(KEY)).zen.bestScore).toBe(4);
+  });
+
+  it('diskChanged is false when storage is blocked or unreadable', async () => {
+    const { storage } = await fresh();
+    storage.load();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('corrupt'); });
+    expect(storage.diskChanged()).toBe(false);
+    vi.restoreAllMocks();
+    vi.stubGlobal('localStorage', undefined);
+    expect(storage.diskChanged()).toBe(false);
+    expect(storage.isAvailable()).toBe(false);
+  });
+});
