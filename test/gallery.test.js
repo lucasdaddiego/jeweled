@@ -84,6 +84,22 @@ function patchImages({ complete, naturalWidth }, fn) {
 }
 
 describe('gallery: rendering', () => {
+  // A full gallery (12) used to draw 4 rows at 800x600 and 6 at 390x844 with
+  // no scroll, so the oldest paintings started below the screen.
+  it.each([[800, 600], [390, 844]])('a full gallery fits on a %ix%i screen', (vw, vh) => {
+    setViewport(vw, vh, 1);
+    render.setupCanvas();
+    const at = '2024-03-05T12:00:00.000Z';
+    storage.saveKey('zen', {
+      gallery: Array.from({ length: 12 }, (_, i) => ({ dataUrl: `data:image/png;base64,${i}`, at })),
+    });
+    gallery.enter();
+    const label = i18n.formatDate(new Date(at));
+    const ys = drawFrame().filter((c) => c[0] === 'fillText' && c[1][0] === label).map((c) => c[1][2]);
+    expect(ys).toHaveLength(12);
+    expect(Math.max(...ys) + 11).toBeLessThanOrEqual(vh);   // 11px date label under each tile
+  });
+
   it('empty gallery shows the empty hint (and enter() clears a leftover body class)', () => {
     document.body.className = 'daily-bg'; // arrived from the daily scenes
     gallery.enter();

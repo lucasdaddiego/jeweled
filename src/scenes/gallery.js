@@ -51,9 +51,17 @@ export function draw() {
   } else {
     const cols = render.layout.isNarrow ? 2 : 3;
     const gap = 14;
-    const tile = Math.floor((colM.w - (cols - 1) * gap) / cols);
-    const ox = colM.x;
     const oy = titleY + 56;
+    // The gallery keeps 12 paintings and does not scroll. Full-width tiles
+    // fit about two rows, so shrink them (and center the grid) when the rows
+    // would run past the bottom edge, or the oldest paintings are never seen.
+    const rows = Math.ceil(items.length / cols);
+    const widthTile = Math.floor((colM.w - (cols - 1) * gap) / cols);
+    const fitTile = Math.floor((h - render.layout.safeBottom - 16 - oy) / rows) - 26 - gap;
+    const tile = Math.max(1, Math.min(widthTile, fitTile));
+    const ox = tile < widthTile
+      ? colM.x + Math.floor((colM.w - (cols * tile + (cols - 1) * gap)) / 2)
+      : colM.x;
     const ctx = render.ctxRef();
     for (let i = 0; i < items.length; i++) {
       const x = ox + (i % cols) * (tile + gap);
