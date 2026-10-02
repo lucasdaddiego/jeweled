@@ -90,9 +90,15 @@ let cache = null;
 // Without this guard, saveAll() would clobber the newer blob with defaults.
 let _readOnly = false;
 
+// With site data blocked (a browser setting), reading window.localStorage
+// itself throws a SecurityError, and `typeof` does not catch a throwing getter.
+function storageAvailable() {
+  try { return typeof localStorage !== 'undefined'; } catch { return false; }
+}
+
 export function load() {
   if (cache) return cache;
-  if (typeof localStorage === 'undefined') {
+  if (!storageAvailable()) {
     cache = defaultState();
     return cache;
   }
@@ -186,7 +192,7 @@ let _saveDirty = false;
 
 export function saveAll() {
   if (!cache) cache = defaultState();
-  if (typeof localStorage === 'undefined') return;
+  if (!storageAvailable()) return;
   // Refuse to persist over a future-version blob — see _readOnly comment.
   if (_readOnly) {
     _saveDirty = false;
@@ -236,7 +242,7 @@ export function reset() {
   _readOnly = false;
   _saveDirty = false;
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
-  if (typeof localStorage === 'undefined') return;
+  if (!storageAvailable()) return;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (err) {

@@ -37,6 +37,25 @@ describe('load()', () => {
     expect(storage.load().version).toBeDefined();
   });
 
+  // Site data blocked: the localStorage getter itself throws. The game must
+  // run on defaults, not fail boot with the "browser too old" notice.
+  it('falls back to defaults when reading localStorage throws (site data blocked)', async () => {
+    const { storage } = await fresh();
+    const desc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() { throw new DOMException('Access is denied for this document.', 'SecurityError'); },
+    });
+    try {
+      expect(storage.load().version).toBeDefined();
+      storage.saveKey('settings', { haptic: false });
+      expect(() => storage.flush()).not.toThrow();
+      expect(() => storage.reset()).not.toThrow();
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', desc);
+    }
+  });
+
   it('deep-merges a stored blob, backfilling new default keys', async () => {
     const { storage } = await fresh(JSON.stringify({
       version: 1,
