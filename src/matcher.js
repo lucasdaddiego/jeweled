@@ -127,7 +127,7 @@ export function findMatches(grid, swapOrigin = null) {
         // Clear all cells of both runs
         for (let c = h.c0; c <= h.c1; c++) cleared.add(`${h.r},${c}`);
         for (let r = v.r0; r <= v.r1; r++) cleared.add(`${r},${v.c}`);
-        const spawnCell = preferSwapOrigin(swapOrigin, [{ r: h.r, c: v.c }]);
+        const spawnCell = spawnCellFor(grid, swapOrigin, [{ r: h.r, c: v.c }], [...expandRun(h), ...expandRun(v)]);
         toSpawn.push({ r: spawnCell.r, c: spawnCell.c, special: SPECIAL.AREA_BOMB, type: h.type });
         h.consumed = true;
         v.consumed = true;
@@ -141,7 +141,7 @@ export function findMatches(grid, swapOrigin = null) {
     if (run.consumed || run.len < 5) continue;
     const cells = expandRun(run);
     for (const { r, c } of cells) cleared.add(`${r},${c}`);
-    const spawnCell = preferSwapOrigin(swapOrigin, cells);
+    const spawnCell = spawnCellFor(grid, swapOrigin, cells);
     toSpawn.push({ r: spawnCell.r, c: spawnCell.c, special: SPECIAL.COLOR_BOMB, type: run.type });
     run.consumed = true;
   }
@@ -151,7 +151,7 @@ export function findMatches(grid, swapOrigin = null) {
     if (run.consumed || run.len !== 4) continue;
     const cells = expandRun(run);
     for (const { r, c } of cells) cleared.add(`${r},${c}`);
-    const spawnCell = preferSwapOrigin(swapOrigin, cells);
+    const spawnCell = spawnCellFor(grid, swapOrigin, cells);
     toSpawn.push({
       r: spawnCell.r, c: spawnCell.c,
       special: run.axis === 'h' ? SPECIAL.LINE_H : SPECIAL.LINE_V,
@@ -188,6 +188,23 @@ function preferSwapOrigin(swapOrigin, cells) {
   }
   // Middle cell as fallback
   return cells[Math.floor(cells.length / 2)];
+}
+
+// Specials that fire when their cell is cleared (cascade.js queues exactly
+// these). A new special placed on such a cell is wiped by that cell's own
+// activation before it can fire: the player gets the spawn bonus, then the gem
+// is gone. Move the spawn to another cell of the match, as cascade.js already
+// does for STAR and big-wave spawns.
+const FIRES_ON_CLEAR = new Set([
+  SPECIAL.FIRE, SPECIAL.LIGHTNING, SPECIAL.STAR, SPECIAL.LINE_H,
+  SPECIAL.LINE_V, SPECIAL.AREA_BOMB, SPECIAL.COLOR_BOMB,
+]);
+
+function spawnCellFor(grid, swapOrigin, cells, others = cells) {
+  const pick = preferSwapOrigin(swapOrigin, cells);
+  if (!FIRES_ON_CLEAR.has(grid[pick.r][pick.c]?.special)) return pick;
+  const free = others.filter(({ r, c }) => !FIRES_ON_CLEAR.has(grid[r][c]?.special));
+  return free.length ? preferSwapOrigin(null, free) : pick;
 }
 
 // Returns true if swapping cells a and b would create at least one match-3.

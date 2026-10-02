@@ -283,6 +283,31 @@ describe('resolveCurrentMatches', () => {
   });
 });
 
+describe('matcher spawn on a firing special', () => {
+  // Dragging a LINE_V down into a gap makes a 4-run whose swap-origin cell IS
+  // the LINE_V. The new LINE_H used to land on that cell, and the LINE_V's own
+  // activation wiped it before it could fire.
+  it('the new special survives the activation of the special it was spawned beside', () => {
+    const g = [];
+    for (let r = 0; r < GRID; r++) {
+      g.push([]);
+      for (let c = 0; c < GRID; c++) g[r].push(newCell(((r * 2 + c) % 6) + 1));
+    }
+    g[4][0] = newCell(0); g[4][1] = newCell(0); g[4][3] = newCell(0);
+    g[3][2] = newCell(0, SPECIAL.LINE_V);
+    const c = new Cascade(g, { mode: 'daily', rng: mulberry32(1) });
+    const activated = [];
+    c.onSpecialActivated = (a) => activated.push(a.special);
+    expect(c.tryStartSwap({ r: 3, c: 2 }, { r: 4, c: 2 })).toBe(true);
+    let n = 0;
+    while (!(activated.length && (c.state === STATE.FALLING || c.state === STATE.SPAWNING)) && n++ < 5000) {
+      c.update(16);
+    }
+    expect(activated).toEqual([SPECIAL.LINE_V]);
+    expect(g.flat().some(cell => cell?.special === SPECIAL.LINE_H)).toBe(true);
+  });
+});
+
 describe('_afterSpawn cascade (falling existing gems form a new match)', () => {
   it('increments cascade depth when gravity creates a follow-up match', () => {
     const g = checker(2, 3);

@@ -63,6 +63,14 @@ describe('findMatches — horizontal runs', () => {
     expect(res.toSpawn).toEqual([{ r: 3, c: 2, special: SPECIAL.LINE_H, type: 0 }]);
   });
 
+  // The swap moved a special into the run: it fires on this clear and would
+  // wipe a LINE_H placed on its cell before the new gem ever fires.
+  it('moves the LINE_H off a swapOrigin whose own special fires on this clear', () => {
+    const res = findMatches(
+      board({ '3,2': 0, '3,3': 0, '3,4': 0, '3,5': 0 }, { '3,2': SPECIAL.LINE_V }), { r: 3, c: 2 });
+    expect(res.toSpawn).toEqual([{ r: 3, c: 4, special: SPECIAL.LINE_H, type: 0 }]);
+  });
+
   it('falls back to the middle when swapOrigin is not part of the run', () => {
     const res = findMatches(board({ '3,2': 0, '3,3': 0, '3,4': 0, '3,5': 0 }), { r: 7, c: 7 });
     expect(res.toSpawn).toEqual([{ r: 3, c: 4, special: SPECIAL.LINE_H, type: 0 }]);
@@ -140,6 +148,12 @@ describe('findMatches — T/L intersections', () => {
   it('AREA_BOMB stays at the intersection even with a swapOrigin elsewhere', () => {
     const res = findMatches(board({ '3,2': 0, '3,3': 0, '3,4': 0, '2,3': 0, '4,3': 0 }), { r: 2, c: 3 });
     expect(res.toSpawn).toEqual([{ r: 3, c: 3, special: SPECIAL.AREA_BOMB, type: 0 }]);
+  });
+
+  it('moves the AREA_BOMB off an intersection whose own special fires on this clear', () => {
+    const res = findMatches(
+      board({ '3,2': 0, '3,3': 0, '3,4': 0, '2,3': 0, '4,3': 0 }, { '3,3': SPECIAL.LINE_H }));
+    expect(res.toSpawn).toEqual([{ r: 2, c: 3, special: SPECIAL.AREA_BOMB, type: 0 }]);
   });
 
   it('skips an already-consumed vertical run when scanning a later horizontal run', () => {
