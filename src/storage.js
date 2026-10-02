@@ -70,6 +70,19 @@ const MIGRATIONS = {
   // 1: (v1) => ({ ...v1, /* v2 shape */ }),
 };
 
+// migrate() with load()'s safety net: a missing step is a build-time mistake,
+// not a reason to destroy the player's data. Fall back to the unmigrated blob
+// for a best-effort deepMerge: safe for additive changes (the common case);
+// only a genuine rename/restructure would have needed the missing step.
+function migrateOrKeep(blob, fromVersion) {
+  try {
+    return migrate(blob, fromVersion);
+  } catch (err) {
+    console.warn('storage.migrate incomplete, preserving data via deepMerge:', err);
+    return blob;
+  }
+}
+
 function migrate(blob, fromVersion) {
   let v = fromVersion;
   let out = blob;
@@ -141,17 +154,8 @@ export function load() {
     if (fromVersion < STORAGE_VERSION) {
       try { localStorage.setItem(`${STORAGE_KEY}:v${fromVersion}:archive`, raw); }
       catch { /* quota — fine, we tried */ }
-      try {
-        blob = migrate(parsed, fromVersion);
-      } catch (err) {
-        // A missing migration step is a build-time mistake, not a reason to
-        // destroy the player's data. Fall back to a best-effort deepMerge:
-        // safe for additive changes (the common case); only a genuine
-        // rename/restructure would have needed the missing step. The archive
-        // backup above preserves the exact pre-merge blob either way.
-        console.warn('storage.migrate incomplete, preserving data via deepMerge:', err);
-        blob = parsed;
-      }
+      // The archive backup above preserves the exact pre-merge blob either way.
+      blob = migrateOrKeep(parsed, fromVersion);
     }
     // deepMerge fills any leaf keys that were added since the blob was
     // written. Additive changes don't need a version bump — bump only for
@@ -334,9 +338,15 @@ export function importString(code) {
     if (!parsed || typeof parsed !== 'object' || !parsed.profile || !parsed.settings) {
       return { ok: false, reason: 'shape' };
     }
+    // An older code runs its migrations first, like an older stored blob in
+    // load(). Any other version (missing, current, or a claimed newer one)
+    // is not trusted: the deepMerge below stamps it to the current version.
+    const rawVersion = Number(parsed.version);
+    const older = Number.isInteger(rawVersion) && rawVersion > 0 && rawVersion < STORAGE_VERSION;
+    const blob = older ? migrateOrKeep(parsed, rawVersion) : parsed;
     // Same defensive path as load(): defaults + deepMerge so a crafted code
     // can't drop required keys or pollute prototypes.
-    cache = deepMerge(defaultState(), parsed);
+    cache = deepMerge(defaultState(), blob);
     cache.version = STORAGE_VERSION;
     _readOnly = false;
     saveAll();

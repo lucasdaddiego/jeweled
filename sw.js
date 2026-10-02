@@ -28,6 +28,10 @@ const PRECACHE = [
 const CACHEABLE_PREFIXES = ['/src/', '/icons/', '/main.'];
 const CACHEABLE_EXACT = new Set(['/', '/style.css', '/manifest.json', '/favicon.svg']);
 
+// The paths that serve the app shell itself. A 404 for one of these is a broken
+// deploy, not a wrong URL, so the cached shell still answers it.
+const APP_SHELL = new Set(['/', '/index.html']);
+
 function isCacheable(pathname) {
   if (CACHEABLE_EXACT.has(pathname)) return true;
   return CACHEABLE_PREFIXES.some(p => pathname.startsWith(p));
@@ -87,20 +91,27 @@ self.addEventListener('fetch', e => {
   // would be returned to the page even though we have a perfectly good
   // cached version, defeating the point of offline support.
   //
+  // One exception: a navigation the server answers with 404 is a wrong URL,
+  // not an outage. It passes through, so the visitor sees the 404 page
+  // (dist/404.html) instead of the cached app shell under a dead URL.
+  //
   // We also skip caching redirected responses: same-origin 30x followed by a
   // 200 would otherwise be cached as the redirect, replaying the redirect
-  // offline indefinitely.
+  // offline indefinitely. Non-ok responses (the passed-through 404) are never
+  // cached.
   // Split response delivery from cache persistence. Both branches share the
   // same fetch promise, while waitUntil() is registered synchronously during
   // event dispatch (calling it later from a `.then` can be rejected after the
   // event's active phase).
+  const notFoundPage = e.request.mode === 'navigate' && !APP_SHELL.has(url.pathname);
   const networkResponse = fetch(e.request).then(resp => {
+    if (resp && resp.status === 404 && notFoundPage) return resp;
     if (!resp || !resp.ok) throw new Error('bad-response');
     return resp;
   });
   const cacheUpdate = networkResponse
     .then(resp => {
-      if (resp.redirected || resp.type === 'opaqueredirect' || !isCacheable(url.pathname)) return null;
+      if (!resp.ok || resp.redirected || resp.type === 'opaqueredirect' || !isCacheable(url.pathname)) return null;
       const copy = resp.clone();
       return caches.open(CACHE).then(c => c.put(e.request, copy));
     })

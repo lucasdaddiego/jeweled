@@ -577,3 +577,65 @@ describe('diskChanged / reloadFromDisk', () => {
     expect(storage.isAvailable()).toBe(false);
   });
 });
+
+// A save code from an older build runs the same migrations as an older stored
+// blob in load().
+describe('importString versions', () => {
+  async function v2Storage() {
+    vi.resetModules();
+    vi.doMock('../src/config.js', async () => ({
+      ...(await vi.importActual('../src/config.js')),
+      STORAGE_VERSION: 2,
+    }));
+    const storage = await import('../src/storage.js');
+    storage.load();
+    return storage;
+  }
+  const code = (obj) => 'JWLD1.' + btoa(JSON.stringify(obj));
+
+  afterEach(() => {
+    delete Object.prototype[1];
+    vi.doUnmock('../src/config.js');
+  });
+
+  it('runs the migration steps on an older code', async () => {
+    Object.defineProperty(Object.prototype, 1, {
+      value: (v1) => ({ ...v1, zen: { ...v1.zen, migratedBadge: true } }),
+      configurable: true, writable: true, enumerable: false,
+    });
+    const storage = await v2Storage();
+    const res = storage.importString(code({ version: 1, profile: { playerName: 'Old' }, settings: {}, zen: { bestScore: 7 } }));
+    expect(res).toEqual({ ok: true });
+    const s = storage.load();
+    expect(s.zen.migratedBadge).toBe(true);
+    expect(s.zen.bestScore).toBe(7);
+    expect(s.version).toBe(2);
+  });
+
+  it('keeps the data when a step is missing, like load()', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storage = await v2Storage();
+    const res = storage.importString(code({ version: 1, profile: { playerName: 'Old' }, settings: {}, zen: { bestScore: 7 } }));
+    expect(res).toEqual({ ok: true });
+    expect(storage.load().zen.bestScore).toBe(7);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('treats an unversioned code as current-shape (no migration)', async () => {
+    const step = vi.fn((b) => b);
+    Object.defineProperty(Object.prototype, 1, { value: step, configurable: true, writable: true, enumerable: false });
+    const storage = await v2Storage();
+    expect(storage.importString(code({ profile: { playerName: 'Pre' }, settings: {} }))).toEqual({ ok: true });
+    expect(step).not.toHaveBeenCalled();
+    expect(storage.load().profile.playerName).toBe('Pre');
+  });
+
+  it('does not migrate a code that claims a newer version (stamped, as before)', async () => {
+    const step = vi.fn((b) => b);
+    Object.defineProperty(Object.prototype, 1, { value: step, configurable: true, writable: true, enumerable: false });
+    const storage = await v2Storage();
+    expect(storage.importString(code({ version: 3, profile: { playerName: 'F' }, settings: {} }))).toEqual({ ok: true });
+    expect(step).not.toHaveBeenCalled();
+    expect(storage.load().version).toBe(2);
+  });
+});

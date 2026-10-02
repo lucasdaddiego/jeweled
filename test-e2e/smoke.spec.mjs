@@ -16,7 +16,8 @@
 //   4. Scene switch via __game.setScene('gameZen') settles to cascade IDLE
 //      (entry animation completes) and back to title cleans up window.__zen.
 //   5. The save file lands in localStorage under 'gem-match:v1'.
-//   6. The generated service-worker manifest supports a complete offline reload.
+//   6. The generated service-worker manifest supports a complete offline reload,
+//      and with the worker in control an unknown path still shows the 404 page.
 //   7. On an emulated phone (hasTouch), the release-activated buttons run from
 //      a real touchscreen tap: View source opens a popup to the repo, Share
 //      calls navigator.share with the card image, and without a share sheet
@@ -70,8 +71,10 @@ function startServer() {
         });
         res.end(body);
       } catch {
-        res.writeHead(404, { 'content-type': 'text/plain' });
-        res.end('not found');
+        // Like Cloudflare Pages: an unknown path answers dist/404.html, 404.
+        const body = await readFile(join(ROOT, '404.html')).catch(() => 'not found');
+        res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(body);
       }
     });
     server.on('error', rejectServer);
@@ -391,6 +394,19 @@ async function main() {
       'parked Zen save remains available after a fresh offline reload');
     await context.setOffline(false);
     step('service-worker precache completed a full offline reload with save-state intact');
+
+    // --- 404 through the service worker ----------------------------------------
+    // The worker answers navigations network-first. A 404 is the server's real
+    // answer, not an outage: it must reach the page, not the cached app shell.
+    // A separate page keeps the expected 404 out of the console-error tally.
+    const notFound = await context.newPage();
+    const resp = await notFound.goto(`${base}/nope-xyz`, { waitUntil: 'load', timeout: 15_000 });
+    const nfTitle = await notFound.title();
+    assert(resp && resp.fromServiceWorker(), 'the 404 navigation went through the service worker');
+    assert(resp.status() === 404, `unknown path answers 404 through the worker (got ${resp && resp.status()})`);
+    assert(nfTitle.startsWith('404'), `unknown path shows the 404 page, not the app (title ${JSON.stringify(nfTitle)})`);
+    await notFound.close();
+    step('with the worker in control, an unknown path shows the 404 page (404)');
 
     // --- Touch: release-activated buttons ------------------------------------
     // Runs before the error tally below so its console/page errors count too.
