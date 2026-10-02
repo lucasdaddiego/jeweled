@@ -9,7 +9,7 @@ import * as render from '../src/render.js';
 import * as powerups from '../src/powerups.js';
 import * as storage from '../src/storage.js';
 import { Cascade, STATE } from '../src/cascade.js';
-import { makeEmptyGrid, newCell } from '../src/grid.js';
+import { hasAnyValidMove, makeEmptyGrid, newCell } from '../src/grid.js';
 import { mulberry32 } from '../src/rng.js';
 import { POWERUP_SLOTS, POWERUP_MAX_CHARGES, SPECIAL } from '../src/config.js';
 import { installCanvas, setViewport } from './helpers.js';
@@ -221,6 +221,18 @@ describe('handleTargetTap', () => {
     down(cc.x, cc.y);
     expect(grid[3][3].special).toBe(SPECIAL.AREA_BOMB);
     expect(powerups.getCharges().bombDrop).toBe(1);
+  });
+
+  it('bombDrop that removes the last valid move (a color bomb) reshuffles', () => {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) grid[r][c] = newCell((r + c) % 7);
+    grid[3][3].special = SPECIAL.COLOR_BOMB;            // the board's only valid move
+    expect(hasAnyValidMove(grid)).toBe(true);
+    cascade.onReshuffle = vi.fn();
+    enterMode('bombDrop');
+    const cc = cellCenter(3, 3);
+    down(cc.x, cc.y);
+    expect(cascade.onReshuffle).toHaveBeenCalledOnce();
+    expect(hasAnyValidMove(grid)).toBe(true);
   });
 
   it('bombDrop on an empty cell spends nothing (ok:false path)', () => {

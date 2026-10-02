@@ -259,6 +259,19 @@ describe('resolveCurrentMatches', () => {
     expect(c.onIdleReached).toHaveBeenCalled();
   });
 
+  // A recolor that makes no match goes straight back to IDLE, so this branch
+  // must also enforce the "always a valid move" invariant.
+  it('reshuffles a no-match board that has no valid move left', () => {
+    const g = deadlock();
+    const c = new Cascade(g, { rng: () => 0.123 });
+    c.onReshuffle = vi.fn();
+    c.onIdleReached = vi.fn();
+    expect(c.resolveCurrentMatches()).toBe(false);
+    expect(hasAnyValidMove(g)).toBe(true);
+    expect(c.onReshuffle).toHaveBeenCalledOnce();
+    expect(c.onIdleReached).toHaveBeenCalledOnce();
+  });
+
   it('resolves an existing on-board match', () => {
     const g = checker(2, 3);
     g[4][2] = newCell(0); g[4][3] = newCell(0); g[4][4] = newCell(0);  // a planted 3-run

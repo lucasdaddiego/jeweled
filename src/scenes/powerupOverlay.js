@@ -352,6 +352,8 @@ function handleTargetTap(cell) {
         sound.powerupZap();
         // Same rationale as shuffle: no cascade follows a bomb drop, so
         // persist the board change alongside the already-persisted spend.
+        // A bomb dropped on a color bomb can remove the last valid move.
+        cascade.ensurePlayable?.();
         cascade.onIdleReached?.();
         maybeShowSavedMilestone();
       }

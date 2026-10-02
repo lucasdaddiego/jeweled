@@ -133,6 +133,8 @@ export class Cascade {
     if (this.state !== STATE.IDLE) return false;
     const { cleared, toSpawn } = findMatches(this.grid, origin);
     if (cleared.size === 0) {
+      // A recolor that makes no match can still kill the last valid move.
+      this.ensurePlayable();
       this.onIdleReached?.();
       return false;
     }
@@ -743,12 +745,19 @@ export class Cascade {
     // special spawns and pathological layouts can defeat a single-cell
     // retype. Enforce the invariant here at the last boundary before input is
     // re-enabled so no mode can enter an unplayable IDLE dead-end.
+    this.ensurePlayable();
+    this.state = STATE.IDLE;
+    this.onIdleReached?.();
+  }
+
+  // Reshuffle a board that has no valid move: a dead board bounces every swap
+  // and has no hint. The cascade runs this before IDLE, and so must the board
+  // edits that start no cascade (a recolor without a match, a bomb drop).
+  ensurePlayable() {
     if (!hasAnyValidMove(this.grid)) {
       reshuffle(this.grid, this.rng);
       this.onReshuffle?.();
     }
-    this.state = STATE.IDLE;
-    this.onIdleReached?.();
   }
 
 
