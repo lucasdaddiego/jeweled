@@ -273,6 +273,27 @@ describe('HUD helpers', () => {
     expect(render.ellipsize(ctx, 123, 4000)).toBe('123');        // number coerced, fits
   });
 
+  it('ellipsize never splits an emoji or a grapheme cluster', () => {
+    const ctx = makeStubCtx(); // measureText(s) => s.length*6 (UTF-16 units)
+    // '😀' is 2 units: at 24px the old code cut after 3 units, mid-surrogate.
+    expect(render.ellipsize(ctx, '😀😀😀😀😀', 24)).toBe('😀…');
+    // '👩‍💻' is one grapheme of 5 units: no part of it fits beside the '…'.
+    expect(render.ellipsize(ctx, '👩\u200d💻👩\u200d💻👩\u200d💻', 30)).toBe('…');
+    expect(render.ellipsize(ctx, '👩\u200d💻👩\u200d💻👩\u200d💻', 66)).toBe('👩\u200d💻👩\u200d💻…');
+    // A flag is two regional indicators (4 units): kept whole.
+    expect(render.ellipsize(ctx, 'AR🇦🇷🇦🇷', 42)).toBe('AR🇦🇷…');
+  });
+
+  it('ellipsize keeps surrogate pairs whole without Intl.Segmenter', () => {
+    vi.stubGlobal('Intl', { ...Intl, Segmenter: undefined });
+    try {
+      const ctx = makeStubCtx();
+      expect(render.ellipsize(ctx, '😀😀😀😀😀', 25)).toBe('😀…');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('ellipsize soft-caps the cache at 256 entries (clear on overflow)', () => {
     const ctx = makeStubCtx();
     for (let i = 0; i < 300; i++) render.ellipsize(ctx, 'label-' + i, 50);

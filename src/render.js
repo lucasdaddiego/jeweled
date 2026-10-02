@@ -971,18 +971,30 @@ export function ellipsize(ctx, text, maxW) {
   if (ctx.measureText(value).width <= maxW) {
     out = value;
   } else {
+    // Cut between graphemes, not UTF-16 units: a unit cut can split an emoji's
+    // surrogate pair (drawn as �) or a ZWJ sequence / flag / accent. Browsers
+    // without Intl.Segmenter (Firefox < 125) cut between code points, which
+    // still keeps surrogate pairs whole.
+    const parts = graphemes(value);
     const suffix = '…';
-    let lo = 0, hi = value.length;
+    let lo = 0, hi = parts.length;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
-      if (ctx.measureText(value.slice(0, mid) + suffix).width <= maxW) lo = mid;
+      if (ctx.measureText(parts.slice(0, mid).join('') + suffix).width <= maxW) lo = mid;
       else hi = mid - 1;
     }
-    out = value.slice(0, lo) + suffix;
+    out = parts.slice(0, lo).join('') + suffix;
   }
   if (ellipsizeCache.size > 256) ellipsizeCache.clear();
   ellipsizeCache.set(key, out);
   return out;
+}
+
+function graphemes(text) {
+  if (typeof Intl.Segmenter === 'function') {
+    return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), (s) => s.segment);
+  }
+  return Array.from(text);
 }
 
 export function fillTextEllipsized(ctx, text, x, y, maxW) {

@@ -58,13 +58,21 @@ export function createBoard(rng = Math.random) {
   return g;
 }
 
+// Re-roll budget for a banned type. With at most 2 of 7 types banned, a real
+// rng needs more than 32 re-rolls with probability (2/7)^32 ≈ 4e-18, so seeded
+// boards (Daily, puzzles) draw exactly the rng values they always did. A stuck
+// rng (always the same banned value) used to spin here forever.
+const MAX_REROLLS = 32;
+
 function pickTypeNoMatch(g, r, c, rng) {
   // Avoid creating a 3-in-row with cells above or to the left.
   const banned = new Set();
   if (r >= 2 && g[r-1][c] && g[r-2][c] && g[r-1][c].type === g[r-2][c].type) banned.add(g[r-1][c].type);
   if (c >= 2 && g[r][c-1] && g[r][c-2] && g[r][c-1].type === g[r][c-2].type) banned.add(g[r][c-1].type);
-  let t;
-  do { t = (rng() * TYPES) | 0; } while (banned.has(t));
+  let t = (rng() * TYPES) | 0;
+  for (let n = 0; banned.has(t) && n < MAX_REROLLS; n++) t = (rng() * TYPES) | 0;
+  // Budget spent: the next type after the last draw that is not banned.
+  while (banned.has(t)) t = (t + 1) % TYPES;
   return t;
 }
 

@@ -150,21 +150,9 @@ function drawAchievementTile(x, y, w, h, a, unlocked) {
   // Ellipsize the description so long achievement descriptions don't bleed
   // past the tile edge on narrow viewports.
   const maxDescW = w - (72 + 8);
-  ctx.fillText(ellipsize(ctx, i18n.t(a.descKey), maxDescW), x + 72, y + h * 0.66);
+  // render.ellipsize uses the current ctx font and cuts between graphemes.
+  ctx.fillText(render.ellipsize(ctx, i18n.t(a.descKey), maxDescW), x + 72, y + h * 0.66);
   ctx.restore();
-}
-
-// Truncate `text` with an ellipsis if its rendered width exceeds maxW.
-// Uses the current ctx font, so call after fillStyle/font are set.
-function ellipsize(ctx, text, maxW) {
-  if (ctx.measureText(text).width <= maxW) return text;
-  let lo = 0, hi = text.length;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (ctx.measureText(text.slice(0, mid) + '…').width <= maxW) lo = mid;
-    else hi = mid - 1;
-  }
-  return text.slice(0, lo) + '…';
 }
 
 export function onPointer(evt) {

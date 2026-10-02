@@ -75,6 +75,16 @@ describe('createBoard', () => {
     expect(g.every(row => row.length === GRID && row.every(c => c && typeof c.type === 'number'))).toBe(true);
   });
 
+  it('a stuck rng cannot hang the build: banned re-rolls are capped', () => {
+    // rng() === 0 always draws type 0, and (0,2) bans type 0 after (0,0),(0,1).
+    // An uncapped re-roll loop spins forever; the guard turns that into a throw.
+    let calls = 0;
+    const rng = () => { if (++calls > 5_000_000) throw new Error('runaway re-roll loop'); return 0; };
+    const g = createBoard(rng);
+    expect(g.every(row => row.every(c => c && typeof c.type === 'number'))).toBe(true);
+    expect(findMatches(g).cleared.size).toBe(0);
+  });
+
   it('avoids 3-in-a-rows while building: banned types are re-rolled', () => {
     // Deterministic rng over a 14-value cycle so vertical pairs (e.g. col0 rows
     // 0,1 share a type) and horizontal pairs recur constantly during the build —
