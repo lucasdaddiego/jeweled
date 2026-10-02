@@ -598,6 +598,21 @@ describe('pendingMilestones snapshot roundtrip', () => {
 
   // The other half of the mutual exclusion: with no resumable snapshot, unbind's
   // auto-bank is the ONLY net and must still fire, or ending mid-popup eats it.
+  // A pick pays the charge out at once, so the snapshot must stop owing it: a
+  // reload runs no exit() and resumes straight from the last idle snapshot.
+  it('picking at idle re-snapshots, so a resumed run does not re-offer the paid milestone', () => {
+    zen.enter({});
+    const c = debugHud.activeCascade(); runToIdle(zen, c);
+    c.onScoreChanged(1500, 1500); c.onIdleReached();    // the move settles: snapshot owes 1
+    expect(storage.load().zen.saveState.pendingMilestones).toBe(1);
+    const bs = []; overlay.draw(-1, -1, bs);
+    bs.find(b => b.kind === 'milestone').onClick();     // pay it out
+    expect(storage.load().zen.saveState.pendingMilestones).toBe(0);
+    zen.enter({ restoreFrom: storage.load().zen.saveState }); // reload resumes the run
+    expect(overlay.isModalOpen()).toBe(false);
+    expect(storage.load().powerups.charges.shuffle).toBe(1);
+  });
+
   it('ending the run still auto-banks the pending charge (snapshot is gone)', () => {
     zen.enter({});
     const c = debugHud.activeCascade(); runToIdle(zen, c);

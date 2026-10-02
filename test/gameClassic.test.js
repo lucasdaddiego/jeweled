@@ -315,6 +315,22 @@ describe('pendingMilestones: the snapshot and unbind must not both pay out', () 
     expect(totalCharges()).toBe(0);                        // and never paid out twice
   });
 
+  // A pick pays the charge out at once; the snapshot must stop owing it, or a
+  // reload (no exit) resumes the run and re-offers the same milestone.
+  it('picking at idle re-snapshots, so the resumed level does not re-offer it', () => {
+    classic.enter({ restoreFrom: start() });
+    const c = debugHud.activeCascade();
+    c.onScoreChanged(1500, 1500); c.onIdleReached();       // snapshot owes 1
+    expect(storage.load().classic.saveState.pendingMilestones).toBe(1);
+    const bs = []; overlay.draw(-1, -1, bs);
+    bs.find(b => b.kind === 'milestone').onClick();
+    const ss = storage.load().classic.saveState;
+    expect(ss.pendingMilestones).toBe(0);
+    classic.enter({ restoreFrom: ss });
+    expect(overlay.isModalOpen()).toBe(false);
+    expect(totalCharges()).toBe(1);
+  });
+
   // The other half of the mutual exclusion: once the level is finalized there is
   // no snapshot left to re-offer the charge, so unbind's auto-bank must fire.
   it('finishing the level still auto-banks the pending charge (no snapshot left)', () => {

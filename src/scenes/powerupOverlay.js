@@ -309,6 +309,11 @@ function onMilestonePicked(slot) {
   if (!powerups.addCharge(slot)) return;
   pendingMilestones--;
   if (pendingMilestones <= 0) milestonePopup = false;
+  // The charge is already in storage, but the parked-run snapshot still owes
+  // this milestone. A reload (no exit) or a Back mid-cascade resumes from that
+  // snapshot and re-offered the same milestone, one free charge per cycle.
+  // Mid-cascade picks need nothing: the next idle snapshots the new count.
+  if (cascade?.state === STATE.IDLE) cascade.onIdleReached?.();
 }
 
 function onRecolorColorPicked(type) {
