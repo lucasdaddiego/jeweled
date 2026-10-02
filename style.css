@@ -96,7 +96,8 @@ body.daily-bg {
   backdrop-filter: blur(8px);
   z-index: 100;
 }
-#name-input-wrap > div {
+#name-input-wrap > div,
+#import-input-wrap > div {
   background: #1a1530;
   padding: 24px 28px;
   border-radius: 16px;
@@ -104,13 +105,15 @@ body.daily-bg {
   text-align: center;
   min-width: 280px;
 }
-#name-input-wrap label {
+#name-input-wrap label,
+#import-input-wrap label {
   display: block;
   margin-bottom: 12px;
   font-size: 18px;
   font-weight: 500;
 }
-#name-input-wrap input {
+#name-input-wrap input,
+#import-input-wrap input {
   display: block;
   width: 100%;
   padding: 10px 14px;
@@ -127,8 +130,10 @@ body.daily-bg {
   user-select: text;
   -webkit-user-select: text;
 }
-#name-input-wrap input:focus { border-color: #7c3aed; }
-#name-input-wrap button {
+#name-input-wrap input:focus,
+#import-input-wrap input:focus { border-color: #7c3aed; }
+#name-input-wrap button,
+#import-input-wrap button {
   padding: 8px 24px;
   font-size: 15px;
   font-family: inherit;
@@ -138,7 +143,9 @@ body.daily-bg {
   border-radius: 8px;
   cursor: pointer;
 }
-#name-input-wrap button:hover { background: #8d4cf0; }
+#name-input-wrap button:hover,
+#import-input-wrap button:hover { background: #8d4cf0; }
+#import-input-wrap button + button { margin-left: 8px; }   /* Import + Cancel */
 
 /* === Boot splash — visible until main.js finishes initial setup === */
 #boot-splash {

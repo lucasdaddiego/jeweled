@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { installCanvas, setViewport } from './helpers.js';
 
 // title.js imports ../main.js (setScene, clockMs). Mock it (hoisted) so importing
@@ -748,6 +749,27 @@ describe('settings overlay — save transfer', () => {
     expect(storage.load().zen.bestScore).toBe(777);
     expect(document.getElementById('import-input-wrap')).toBeNull();
     expect(document.getElementById('name-input-wrap')).toBeNull(); // name present → no re-entry
+  });
+
+  // style.css must give the import card the name card's rules: without them the
+  // modal was a transparent card with browser-default input and buttons.
+  it('the import modal gets the same card, input and button styles as the name modal', () => {
+    const css = document.createElement('style');
+    css.textContent = readFileSync('style.css', 'utf8');  // vitest runs from the repo root
+    document.head.appendChild(css);
+    try {
+      seedName('Ada');
+      down(openSettings()[11]);                        // Import
+      const card = document.querySelector('#import-input-wrap > div');
+      const [ok, cancel] = card.querySelectorAll('button');
+      expect(getComputedStyle(card).backgroundColor).toBe('rgb(26, 21, 48)');
+      expect(getComputedStyle(document.getElementById('import-input')).display).toBe('block');
+      expect(getComputedStyle(ok).backgroundColor).toBe('rgb(124, 58, 237)');
+      expect(getComputedStyle(cancel).marginLeft).toBe('8px');
+      cancel.click();
+    } finally {
+      css.remove();
+    }
   });
 
   it('Import rejects an invalid code with the importBad alert and keeps local state', async () => {
