@@ -391,6 +391,24 @@ describe('drawBoard + specials + effects', () => {
     expect(names(mainCalls())).toContain('rotate');
   });
 
+  // The sway turns the drawn board around its center, so a tap on the gem the
+  // player sees near a corner must be turned back before the cell lookup.
+  it('screenToCell follows the idle wobble: a tap on the drawn corner gem hits it', () => {
+    const g = buildFullBoard();
+    clockMs.mockReturnValue(1200 * Math.PI / 2);         // sin() = 1: full sway
+    render.drawBoard(g, { idleMs: 9000 });
+    const { boardX, boardY, boardSize, cellSize: cs } = render.layout;
+    const cx = boardX + boardSize / 2, cy = boardY + boardSize / 2;
+    // Unrotated, this point sits 4% of a cell inside gem (7,7)'s left edge.
+    const px = boardX + 7.04 * cs, py = boardY + 7.5 * cs;
+    const a = 0.02, dx = px - cx, dy = py - cy;          // where drawBoard draws it
+    const sx = cx + dx * Math.cos(a) - dy * Math.sin(a);
+    const sy = cy + dx * Math.sin(a) + dy * Math.cos(a);
+    expect(render.screenToCell(sx, sy)).toEqual({ r: 7, c: 7 });
+    render.drawBoard(g, { idleMs: 0 });                  // sway over: plain mapping again
+    expect(render.screenToCell(px, py)).toEqual({ r: 7, c: 7 });
+  });
+
   it('no wobble below the idle threshold', () => {
     const g = buildFullBoard();
     clockMs.mockReturnValue(600);

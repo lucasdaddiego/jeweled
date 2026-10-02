@@ -405,7 +405,18 @@ export function clearFrame() {
 export function ctxRef() { return ctx; }
 
 // === Coordinate helpers ===
+// The idle-wobble rotation drawBoard applied last frame (angle 0 = none).
+// screenToCell turns a tap back by it, so hit-testing picks the gem the
+// player sees: near the board corners the sway moves a gem ~10% of a cell.
+let wobble = { angle: 0, cx: 0, cy: 0 };
+
 export function screenToCell(x, y) {
+  if (wobble.angle) {
+    const dx = x - wobble.cx, dy = y - wobble.cy;
+    const cos = Math.cos(-wobble.angle), sin = Math.sin(-wobble.angle);
+    x = wobble.cx + dx * cos - dy * sin;
+    y = wobble.cy + dx * sin + dy * cos;
+  }
   const cs = layout.cellSize;
   const c = Math.floor((x - layout.boardX) / cs);
   const r = Math.floor((y - layout.boardY) / cs);
@@ -469,9 +480,10 @@ export function drawBoard(grid, opts = {}) {
   if (shakeAmp > 0.1) {
     ctx.translate((Math.random() - 0.5) * shakeAmp, (Math.random() - 0.5) * shakeAmp);
   }
+  const cx = layout.boardX + layout.boardSize / 2;
+  const cy = layout.boardY + layout.boardSize / 2;
+  wobble = { angle: wobbleAngle, cx, cy };
   if (wobbleAngle !== 0) {
-    const cx = layout.boardX + layout.boardSize / 2;
-    const cy = layout.boardY + layout.boardSize / 2;
     ctx.translate(cx, cy);
     ctx.rotate(wobbleAngle);
     ctx.translate(-cx, -cy);
