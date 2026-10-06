@@ -12,6 +12,11 @@ const START = '  // <generated-precache>';
 const END = '  // </generated-precache>';
 const ALLOWED_EXTENSIONS = new Set(['.css', '.js', '.json', '.png', '.svg']);
 const EXCLUDED = new Set(['/index.html', '/sw.js']);
+// The PWA install icons (512px + maskable, ~100 KB together) are fetched by
+// the manifest flow only, never by the running game, yet every new service
+// worker version re-downloaded them at install time. They stay runtime-
+// cacheable under the '/icons/' prefix in sw.js; only the precache skips them.
+const EXCLUDED_PATTERNS = [/^\/icons\/icon-(512|maskable)\.png$/];
 
 async function walk(dir) {
   const out = [];
@@ -25,7 +30,7 @@ async function walk(dir) {
 
 const discovered = (await walk(publishDir))
   .map((path) => '/' + relative(publishDir, path).split(sep).join('/'))
-  .filter((path) => !EXCLUDED.has(path))
+  .filter((path) => !EXCLUDED.has(path) && !EXCLUDED_PATTERNS.some((re) => re.test(path)))
   .sort();
 // Cache the app shell by its public navigation URL. index.html is deliberately
 // omitted as a second alias, and sw.js must always come from the network.

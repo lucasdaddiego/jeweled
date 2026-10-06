@@ -26,7 +26,12 @@ const PRECACHE = [
 // outside the whitelist passes through without populating the cache — keeps
 // quota predictable and avoids accidentally pinning stale third-party data.
 const CACHEABLE_PREFIXES = ['/src/', '/icons/', '/main.'];
-const CACHEABLE_EXACT = new Set(['/', '/style.css', '/manifest.json', '/favicon.svg']);
+// MAIN_ENTRY and STYLE_ENTRY are rewritten to the fingerprinted bundle and
+// stylesheet paths at deploy time (deploy.yml); the source tree serves the
+// plain names.
+const MAIN_ENTRY = '/src/main.js';
+const STYLE_ENTRY = '/style.css';
+const CACHEABLE_EXACT = new Set(['/', STYLE_ENTRY, '/manifest.json', '/favicon.svg']);
 
 // The paths that serve the app shell itself. A 404 for one of these is a broken
 // deploy, not a wrong URL, so the cached shell still answers it.
@@ -41,9 +46,7 @@ function isCacheable(pathname) {
 // best-effort, but a hole in one of these must fail the install (the old
 // cache stays live and a retry happens on the next visit) rather than
 // activate a cache that can't start the game offline.
-// MAIN_ENTRY is rewritten to the fingerprinted bundle path at deploy time.
-const MAIN_ENTRY = '/src/main.js';
-const CORE = ['/', '/style.css', MAIN_ENTRY];
+const CORE = ['/', STYLE_ENTRY, MAIN_ENTRY];
 
 self.addEventListener('install', e => {
   // Pre-cache so first offline load works. cache: 'no-cache' bypasses HTTP cache.

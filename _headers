@@ -6,6 +6,13 @@
   Strict-Transport-Security: max-age=31536000
   Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'none'
 
+# Cloudflare serves the same deployment on <project>.pages.dev (and on every
+# preview URL under it). The canonical tag alone still lets a crawler index
+# the twin; this host-scoped stanza (a documented Pages recipe) keeps it out
+# of search results for good. The custom domain is unaffected.
+https://:project.pages.dev/*
+  X-Robots-Tag: noindex
+
 /sw.js
   Cache-Control: no-cache
 

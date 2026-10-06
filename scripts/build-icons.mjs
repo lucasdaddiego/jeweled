@@ -102,6 +102,9 @@ function maskableSVG(size) {
 </svg>`;
 }
 
+// resvg writes an unoptimized PNG (~2x the size of a losslessly re-encoded
+// one). After a re-run, re-encode the three icons/*.png losslessly (any
+// PNG optimizer, or Pillow's `Image.save(optimize=True)`) before committing.
 function render(svg, size, outPath) {
   const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: size } });
   writeFileSync(outPath, resvg.render().asPng());
