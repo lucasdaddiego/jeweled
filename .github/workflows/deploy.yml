@@ -186,6 +186,30 @@ jobs:
                 'node --check "{}" 2>&1 || { echo "::error file={}::syntax error"; exit 255; }'
           echo "Syntax OK across $(find dist -type f -name '*.js' | wc -l) files"
 
+      # Boot the bundled tree in a real browser before anything ships. The
+      # gate's smoke job exercised the ES-module sources; only this run sees
+      # the single-file bundle, the minified sw.js and the fingerprinted
+      # stylesheet. A module that works as separate files but throws once
+      # hoisted into one scope (an import-cycle TDZ) passes `node --check` and
+      # used to reach production as a boot splash that never went away.
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Smoke-test the production bundle
+        run: node test-e2e/smoke.spec.mjs
+
       # Run wrangler directly instead of via cloudflare/wrangler-action — the
       # action's own version probe always reinstalls regardless of cache state.
       # --commit-dirty=true silences the "uncommitted changes" warning that

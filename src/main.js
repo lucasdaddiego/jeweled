@@ -10,6 +10,7 @@ import * as debugHud from './debugHud.js';
 import * as i18n from './i18n.js';
 import * as dialogs from './dialogs.js';
 import * as tabLock from './tabLock.js';
+import { todayISO } from './rng.js';
 
 // Scene modules
 import * as title from './scenes/title.js';
@@ -480,6 +481,13 @@ function init() {
     getLocale: i18n.getLocale,
     isSwUpdateReady: () => _swUpdateReady,
     tabState: tabLock.getState,
+    // Geometry + date helpers for the e2e smoke (test-e2e/smoke.spec.mjs).
+    // It computes tap targets from these instead of importing /src/*.js, so
+    // the same spec runs against the single-file production bundle too.
+    viewport: render.getViewport,
+    layout: render.layout,
+    todayISO,
+    resultLayout: result.computeResultLayout,
   };
 }
 

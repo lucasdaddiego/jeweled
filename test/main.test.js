@@ -20,6 +20,9 @@ const h = vi.hoisted(() => {
     enter: undefined, exit: undefined, update: undefined, draw: undefined,
     onPointer: undefined, onMove: undefined, onWheel: undefined,
   };
+  // main re-exports this pure layout helper on window.__game for the e2e
+  // smoke; a vi.mock throws on access to an export it does not define.
+  scenes.result.computeResultLayout = vi.fn();
   const ctxStub = {
     fillStyle: '', font: '', textAlign: '', textBaseline: '',
     save() {}, restore() {}, fillRect() {}, fillText() {},
@@ -31,6 +34,7 @@ const h = vi.hoisted(() => {
       setupCanvas: vi.fn(), buildAtlas: vi.fn(), setGemStyle: vi.fn(),
       ctxRef: vi.fn(() => ctxStub),
       getViewport: vi.fn(() => ({ w: 800, h: 600 })),
+      layout: { safeTop: 0 },
     },
     input: { setup: vi.fn(), on: vi.fn(), isPointerDown: vi.fn(() => false) },
     storage: { load: vi.fn(), flush: vi.fn(), getSettings: vi.fn(() => ({ sound: true, gemStyle: 'color' })) },
@@ -132,6 +136,11 @@ describe('init (auto-runs on import; jsdom readyState=complete, hostname=localho
     window.__game.setLanguage('es');
     expect(h.i18n.setLanguage).toHaveBeenCalledWith('es');
     expect(typeof main.clockMs).toBe('function');
+    // The e2e smoke computes its tap targets from these (no /src imports, so
+    // the same spec also runs against the production bundle).
+    expect(window.__game.viewport).toBe(h.render.getViewport);
+    expect(window.__game.todayISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(window.__game.resultLayout).toBe(h.scenes.result.computeResultLayout);
   });
 
   it('flushes storage on pagehide', async () => {

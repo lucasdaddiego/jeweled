@@ -9,6 +9,11 @@
 // It lives outside test/ and uses .mjs so the Vitest suite (include:
 // test/**/*.test.js) never picks it up.
 //
+// It serves whatever is in dist/: the ES-module source tree (test.yml) or the
+// bundled, minified production tree (deploy.yml runs it after the bundle step,
+// before `wrangler pages deploy`). Nothing here imports /src/*.js, which the
+// bundle removes; geometry and dates come from window.__game.
+//
 // What it asserts:
 //   1. The page boots: #boot-splash is removed once the first frame is drawn.
 //   2. canvas#game exists with a nonzero backing store and layout size.
@@ -156,10 +161,9 @@ async function runTouchPhase(browser, base, consoleErrors, pageErrors) {
   // --- Title → View source (window.open → popup) ------------------------------
   // title.js draws the link label at x=10 with its baseline at h - 6 - sab and
   // a 13px-tall hit rect above it; tap a few px in from its left edge.
-  const link = await page.evaluate(async () => {
-    const render = await import('/src/render.js');
+  const link = await page.evaluate(() => {
     const sab = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0;
-    return { x: 16, y: render.getViewport().h - 6 - sab - 6 };
+    return { x: 16, y: window.__game.viewport().h - 6 - sab - 6 };
   });
   const popupPromise = page.waitForEvent('popup', { timeout: 10_000 });
   await page.touchscreen.tap(link.x, link.y);
@@ -170,20 +174,17 @@ async function runTouchPhase(browser, base, consoleErrors, pageErrors) {
   step('tap on View source → window.open popup to the repo');
 
   // --- Daily result → Share (navigator.share, then the clipboard rung) -------
-  const today = await page.evaluate(() => import('/src/rng.js').then((m) => m.todayISO()));
+  const today = await page.evaluate(() => window.__game.todayISO());
   await page.evaluate((date) => window.__game.setScene('result', {
     mode: 'daily', date, score: 4321, isNewBest: true, movesUsed: 9, streak: 1,
   }), today);
   await settle();
   // Share is the first action; its rect comes from the same pure layout helper
   // result.draw() uses (daily + new best = 2 subtitle lines, 3 actions, no board).
-  const share = await page.evaluate(async () => {
-    const [{ computeResultLayout }, render] = await Promise.all([
-      import('/src/scenes/result.js'), import('/src/render.js'),
-    ]);
-    const { w, h } = render.getViewport();
-    const box = computeResultLayout({
-      w, h, safeTop: render.layout.safeTop, subtitleLines: 2, actionCount: 3,
+  const share = await page.evaluate(() => {
+    const { w, h } = window.__game.viewport();
+    const box = window.__game.resultLayout({
+      w, h, safeTop: window.__game.layout.safeTop, subtitleLines: 2, actionCount: 3,
       leaderboardRows: 0, hasRank: false,
     });
     return { x: w / 2, y: box.buttonsY + box.buttonH / 2 };

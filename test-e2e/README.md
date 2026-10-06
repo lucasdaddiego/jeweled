@@ -4,4 +4,6 @@ Boots the real app in headless Chromium against a built-in static server and ass
 
 Run: `node test-e2e/smoke.spec.mjs` (needs the `playwright` devDependency plus a one-time `npx playwright install chromium`).
 
+It serves whatever `dist/` holds and never imports `/src/*.js` (geometry and dates come from the `window.__game` debug hook), so the same spec runs twice in CI: against the ES-module sources in `test.yml`, and against the bundled, minified production tree in `deploy.yml`, after the bundle step and before `wrangler pages deploy`.
+
 Plain Playwright library script — no `@playwright/test` runner, no config. It is outside `test/**/*.test.js`, so Vitest and the coverage gate never see it.
