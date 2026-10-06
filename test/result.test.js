@@ -5,7 +5,7 @@ import { installCanvas, setViewport } from './helpers.js';
 // import-time main.init(). dialogs.alert() returns a promise that only settles
 // on a button press, so mock it to resolve immediately (the clipboard share
 // path awaits it).
-vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn() }));
+vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn(), announce: vi.fn() }));
 vi.mock('../src/dialogs.js', () => ({ alert: vi.fn().mockResolvedValue(undefined) }));
 // The daily leaderboard client is network-only; default both calls to the
 // "no backend" answer ({ok:false} hides the block) and let individual tests
@@ -24,10 +24,11 @@ vi.mock('../src/shareImage.js', async (importOriginal) => {
 
 import * as render from '../src/render.js';
 import * as storage from '../src/storage.js';
+import * as i18n from '../src/i18n.js';
 import * as dialogs from '../src/dialogs.js';
 import * as leaderboard from '../src/leaderboard.js';
 import { shareCard } from '../src/shareImage.js';
-import { setScene } from '../src/main.js';
+import { setScene, announce } from '../src/main.js';
 import { LEVELS } from '../src/levels.js';
 import { PUZZLES } from '../src/puzzles.js';
 import * as result from '../src/scenes/result.js';
@@ -97,6 +98,17 @@ describe('result: lifecycle + default/unknown mode', () => {
     const t = titleCenter(1, false);
     down(t.x, t.y);
     expect(setScene).toHaveBeenCalledWith('title');
+  });
+
+  it('announces the outcome to the live region: scene, title, then every subtitle line', () => {
+    result.enter({ mode: 'daily', date: '2026-07-01', score: 4321, isNewBest: true, streak: 3 });
+    expect(announce).toHaveBeenCalledExactlyOnceWith([
+      i18n.t('sr.scene.result'),
+      i18n.t('result.dailyHeader', { date: i18n.formatDate('2026-07-01') }),
+      i18n.t('result.scorePts', { score: i18n.formatNumber(4321) }),
+      i18n.t('result.newBest'),
+      i18n.t('daily.streak', { n: 3 }),
+    ].join('. '));
   });
 
   it('exit() and update() are no-ops that do not throw', () => {

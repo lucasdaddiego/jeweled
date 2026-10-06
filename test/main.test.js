@@ -228,20 +228,51 @@ describe('announce (aria-live region)', () => {
     return el;
   }
 
-  it('clears-then-writes the region so repeats re-announce', async () => {
+  // The region is cleared at once and written in a later task (a same-task
+  // clear + set is one unobserved mutation for most screen readers).
+  const settle = () => vi.advanceTimersByTime(60);
+
+  it('clears now, writes in a later task, so repeats re-announce', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const main = await boot();
     const live = addLiveRegion();
     main.announce('Daily challenge started');
+    expect(live.textContent).toBe('');                      // cleared synchronously
+    settle();
     expect(live.textContent).toBe('Daily challenge started');
-    main.announce('Daily challenge started');                // same text again → still set
+    main.announce('Daily challenge started');                // same text again
+    expect(live.textContent).toBe('');                      // → a fresh insertion
+    settle();
     expect(live.textContent).toBe('Daily challenge started');
   });
 
+  it('a second announce inside the delay replaces the pending text (last writer wins)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const main = await boot();
+    const live = addLiveRegion();
+    main.announce('first');
+    main.announce('second');
+    settle();
+    expect(live.textContent).toBe('second');
+  });
+
   it('announces scene changes with the sr.scene.* key', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const main = await boot();
     const live = addLiveRegion();
     main.setScene('stats');                                  // i18n.t mock echoes the key
+    settle();
     expect(live.textContent).toBe('sr.scene.stats');
+  });
+
+  it('schedules the scene announcement before enter(), so a scene can replace it with its own', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const main = await boot();
+    const live = addLiveRegion();
+    h.scenes.result.enter.mockImplementationOnce(() => main.announce('Result screen. 4,321 points'));
+    main.setScene('result');
+    settle();
+    expect(live.textContent).toBe('Result screen. 4,321 points');
   });
 
   it('is a no-op for empty text or a missing region', async () => {
@@ -741,6 +772,43 @@ describe('service worker update flow', () => {
     await Promise.resolve(); await Promise.resolve();
     listeners.controllerchange();
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('applies a deferred update only after the history write names the safe scene', async () => {
+    // Regression: the reload used to fire inside _swapScene, before pushState,
+    // so a Back from #gameZen reloaded while the URL still said #gameZen and
+    // boot resumed the parked run instead of showing the title.
+    h.storage.load.mockReturnValue({ zen: { saveState: null }, classic: { saveState: null } });
+    const { listeners } = stubSW({ controller: {} });
+    const reload = vi.fn();
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#gameZen', reload });
+    const main = await boot();                                   // boots straight into gameZen
+    expect(h.scenes.gameZen.enter).toHaveBeenCalled();
+    window.dispatchEvent(new Event('load'));
+    await Promise.resolve(); await Promise.resolve();
+    listeners.controllerchange();                                // update ready, deferred
+    expect(reload).not.toHaveBeenCalled();
+    const push = vi.spyOn(history, 'pushState');
+    main.setScene('title');
+    expect(push).toHaveBeenCalledWith({ scene: 'title', args: {} }, '', '#title');
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(push.mock.invocationCallOrder[0]).toBeLessThan(reload.mock.invocationCallOrder[0]);
+    h.storage.load.mockReset();
+  });
+
+  it('a Back (popstate) onto a safe scene applies the deferred update too', async () => {
+    const { listeners } = stubSW({ controller: {} });
+    const reload = vi.fn();
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#title', reload });
+    const main = await boot();
+    main.setScene('gameBlitz');
+    window.dispatchEvent(new Event('load'));
+    await Promise.resolve(); await Promise.resolve();
+    listeners.controllerchange();
+    expect(reload).not.toHaveBeenCalled();
+    // The browser has already moved the URL to the popped entry at this point.
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { scene: 'stats', args: {} } }));
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it('warns when registration fails', async () => {

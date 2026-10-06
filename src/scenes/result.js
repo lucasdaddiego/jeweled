@@ -9,7 +9,7 @@ import * as leaderboard from '../leaderboard.js';
 import { shareCard } from '../shareImage.js';
 import { createPressTracker, hitTest } from '../input.js';
 import { buildShareText } from '../dailyMeta.js';
-import { setScene } from '../main.js';
+import { setScene, announce } from '../main.js';
 import { LEVELS } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
 
@@ -38,6 +38,11 @@ export function enter(a = {}) {
   else if (args.isNewBest || args.outcome === 'win') sound.winFanfare();
   else sound.milestoneDing();
 
+  // Screen readers get the outcome, not just "Result screen": this replaces
+  // the generic scene announcement main.js scheduled just before enter().
+  const { title, subtitle } = headline();
+  announce([i18n.t('sr.scene.result'), title, ...subtitle.split('\n')].join('. '));
+
   // Daily leaderboard: submit the counted run (spoofable, friendly — see
   // functions/api/leaderboard/[date].js), or just fetch on replays. The
   // backend is optional: {ok:false} keeps the block hidden entirely.
@@ -62,11 +67,9 @@ export function enter(a = {}) {
 export function exit() {}
 export function update(dt) {}
 
-export function draw() {
-  const { w, h } = render.getViewport();
-  render.clearFrame();
-  buttons = [];
-
+// Title + subtitle (newline-separated lines) for the current args. Shared by
+// draw() and the live-region announcement in enter().
+function headline() {
   let title = '';
   let subtitle = '';
   if (args.mode === 'classic') {
@@ -113,7 +116,15 @@ export function draw() {
     title = i18n.t('result.runEnded');
     subtitle = i18n.t('result.scorePts', { score: i18n.formatNumber(args.score) });
   }
+  return { title, subtitle };
+}
 
+export function draw() {
+  const { w, h } = render.getViewport();
+  render.clearFrame();
+  buttons = [];
+
+  const { title, subtitle } = headline();
   const lines = subtitle.split('\n');
   const actions = buildActions();
   const showLeaderboard = args.mode === 'daily' && lb && lb.ok;

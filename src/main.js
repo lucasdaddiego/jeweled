@@ -84,11 +84,16 @@ export function setScene(name, args = {}, opts = {}) {
   _swapScene(name, args);
   // Mirror the scene change into browser history so back/forward navigate scenes.
   // Skip when we're handling a popstate (avoid pushing while restoring).
-  if (_handlingPopState) return;
-  const state = { scene: name, args: serializeArgs(args) };
-  const url = `#${name}`;
-  if (replace) history.replaceState(state, '', url);
-  else history.pushState(state, '', url);
+  if (!_handlingPopState) {
+    const state = { scene: name, args: serializeArgs(args) };
+    const url = `#${name}`;
+    if (replace) history.replaceState(state, '', url);
+    else history.pushState(state, '', url);
+  }
+  // A pending service-worker update reloads here, AFTER the history write.
+  // Inside _swapScene the URL still named the previous scene: a Back from
+  // #gameZen reloaded on #gameZen and booted into the parked run, not title.
+  maybeReloadForServiceWorkerUpdate();
 }
 
 function _swapScene(name, args) {
@@ -101,10 +106,12 @@ function _swapScene(name, args) {
     currentName = 'title';
   }
   currentArgs = args || {};
-  if (current.enter) current.enter(args);
   // Announce the scene to assistive tech — the canvas is a black box to
   // screen readers, so this hidden live region is the only navigation cue.
+  // Scheduled BEFORE enter(): a scene with more to say (result: the score)
+  // calls announce() from enter() and its text replaces this generic one.
   announce(i18n.t(`sr.scene.${currentName}`));
+  if (current.enter) current.enter(args);
   // If a pointer is still down (typical case: scene swap fired from this
   // scene's own 'down' handler), drop the matching 'up' so it doesn't fire
   // a stray click on whatever button now sits under the release point.
@@ -112,18 +119,24 @@ function _swapScene(name, args) {
   // Reset crossfade so the new scene fades in over CROSSFADE_MS.
   sceneAlpha = 0;
   crossfadeT = 0;
-  maybeReloadForServiceWorkerUpdate();
 }
 
 // Post a message to the visually-hidden aria-live region (index.html). The
 // canvas UI is invisible to screen readers; scene changes and end-of-run
 // results are announced here so the app is at least navigable by ear.
+//
+// Clear now, set in a later task: both writes in one task collapse into no
+// observed change for most screen readers (the same string again, or even a
+// new one, stays silent). The gap makes every call a fresh insertion, and a
+// second call inside the gap replaces the pending text (last writer wins).
+const ANNOUNCE_DELAY_MS = 50;
+let _announceTimer = 0;
 export function announce(text) {
   const el = document.getElementById('sr-live');
   if (!el || !text) return;
-  // Clear-then-set so repeating the same string is re-announced.
   el.textContent = '';
-  el.textContent = text;
+  clearTimeout(_announceTimer);
+  _announceTimer = setTimeout(() => { el.textContent = text; }, ANNOUNCE_DELAY_MS);
 }
 
 // Strip non-serializable / oversized args before stashing in history.state.
@@ -282,6 +295,9 @@ function setupHistoryNav() {
     } finally {
       _handlingPopState = false;
     }
+    // The browser already moved the URL to the popped entry, so a reload
+    // here (pending update, safe scene) boots into the scene on screen.
+    maybeReloadForServiceWorkerUpdate();
   });
 }
 
