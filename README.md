@@ -49,8 +49,8 @@ The development server assembles `dist/`, generates the service-worker
 precache manifest from the published files, and serves the ES-module sources:
 
 ```bash
-npm run serve          # build + serve dist/ with correct module MIME types
-# then open http://localhost:3000
+npm run serve          # build + serve dist/ with wrangler (Pages Functions + _headers included)
+# then open http://localhost:8788
 ```
 
 After `npm run build`, any static server can serve `dist/` as long as `.js`
@@ -137,7 +137,7 @@ vitest.workers.config.js   workerd/KV test runner config
 
 | Script | Does |
 | --- | --- |
-| `npm run serve` | Build and serve `dist/` for local development. |
+| `npm run serve` | Build and serve `dist/` for local development (`wrangler pages dev`, the pinned devDependency). |
 | `npm run build` | Build the Cloudflare Pages output into `dist/`. |
 | `npm run deploy` | Build, then `wrangler pages deploy dist`. |
 | `npm run audit:i18n` | Check for localization regressions. |

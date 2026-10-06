@@ -1,0 +1,16 @@
+# Weekly version updates for the workflow actions (SHA-pinned in
+# .github/workflows/*.yml, Dependabot rewrites the SHA + version comment) and
+# for the npm dev toolchain in package-lock.json. Security alerts are an
+# account-level setting, not configured here.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

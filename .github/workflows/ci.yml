@@ -10,6 +10,13 @@ on:
   push:
     branches-ignore: [master]
 
+# One run per branch: a newer push supersedes the run in flight. The group is
+# keyed on the branch NAME (head_ref for pull_request, ref_name for push) so a
+# same-repo PR's push + pull_request pair share a group and only one survives.
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

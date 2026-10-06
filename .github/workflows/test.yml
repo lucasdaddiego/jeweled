@@ -3,6 +3,9 @@
 # the high-coverage gate (thresholds live in vitest.config.js). Called by
 # ci.yml (pull requests + feature branches) and by deploy.yml as the gate that
 # must pass before anything ships to production.
+#
+# Actions are pinned to commit SHAs (the tag in the comment is what Dependabot
+# bumps): a moved tag can no longer run foreign code inside these jobs.
 name: Test
 
 on:
@@ -17,13 +20,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       # Pinned dev toolchain from package-lock.json; cache keyed on the lockfile.
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -60,12 +64,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -73,8 +78,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The Chromium download (~150 MB) is keyed on the lockfile, which pins
+      # the playwright version. On a hit only the apt system libraries are
+      # (re)installed; on a miss the browser is downloaded as well.
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: E2E smoke test
         run: npm run test:e2e

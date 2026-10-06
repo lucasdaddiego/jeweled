@@ -2,6 +2,10 @@
 # master (and on manual dispatch). scripts/build.sh stamps the commit SHA into
 # the service-worker cache key and the BUILD constant during the build step,
 # using $GITHUB_SHA — no extra CI logic needed.
+#
+# Actions are pinned to commit SHAs (the tag in the comment is what Dependabot
+# bumps): this job holds the Cloudflare token, so a moved tag must not be able
+# to run foreign code here.
 
 name: Deploy to Cloudflare Pages
 
@@ -18,9 +22,10 @@ permissions:
   contents: read
 
 jobs:
-  # Gate: install + i18n audit + syntax check + Vitest with the coverage floor.
-  # Deploy only runs if this passes, so a coverage/test regression blocks
-  # production.
+  # Gate: install + i18n audit + syntax check + Vitest with the coverage floor
+  # + workerd tests + the browser smoke test. Deploy only runs if this passes,
+  # so a coverage/test regression blocks production. The audit is not repeated
+  # below: the gate already ran it on this same commit.
   test:
     uses: ./.github/workflows/test.yml
 
@@ -32,21 +37,17 @@ jobs:
       # Shallow clone — we only need the working tree, not history. Saves
       # ~1s on cold clones of larger repos.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-
-      # Fail fast on localization regressions before doing any build work.
-      # Pure bash + grep, so it needs no dependencies.
-      - name: i18n audit
-        run: bash scripts/i18n-audit.sh
+          persist-credentials: false
 
       # Install the pinned dev toolchain (esbuild, html-minifier-terser,
       # wrangler) from package-lock.json. `npm ci` is reproducible — it installs
       # exactly the locked versions and fails if package.json and the lockfile
       # disagree — which fixes the old floating-version + static-cache-key setup.
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'

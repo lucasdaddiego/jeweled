@@ -12,7 +12,7 @@
     "url": "git+https://github.com/lucasdaddiego/jeweled.git"
   },
   "scripts": {
-    "serve": "npm run build && npx --yes serve dist",
+    "serve": "npm run build && wrangler pages dev dist",
     "build": "bash scripts/build.sh",
     "deploy": "npm run build && wrangler pages deploy dist --project-name=jeweled",
     "audit:i18n": "bash scripts/i18n-audit.sh",
