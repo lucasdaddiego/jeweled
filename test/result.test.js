@@ -315,9 +315,8 @@ describe('result: daily mode', () => {
 
 describe('result: daily leaderboard', () => {
   const LB_TITLE = '🏆 Today’s top scores';
-  // result.js remembers the date it already submitted for this session (a
-  // history re-entry must not POST twice), and the module is shared across
-  // this file — so every test that expects a submit uses its own date.
+  // result.js persists the date it submitted (daily.leaderboardSubmittedDate),
+  // and beforeEach resets storage, so every test starts with nothing posted.
 
   it('submits the counted run with the profile player name and score', () => {
     storage.saveKey('profile', { playerName: 'Zoe' });
@@ -344,6 +343,32 @@ describe('result: daily leaderboard', () => {
     result.enter({ ...args });                             // Back → Forward replays the same args
     expect(leaderboard.submitDaily).toHaveBeenCalledExactlyOnceWith('2026-07-08', 'Player', 321);
     expect(leaderboard.fetchDaily).toHaveBeenCalledExactlyOnceWith('2026-07-08');
+  });
+
+  it('persists the submitted date before the request, so a reload cannot POST again', () => {
+    result.enter({ mode: 'daily', date: '2026-07-09', score: 10 });
+    // Written synchronously, before the (mocked, still pending) POST answers.
+    expect(storage.load().daily.leaderboardSubmittedDate).toBe('2026-07-09');
+    result.exit();
+    result.enter({ mode: 'daily', date: '2026-07-09', score: 10 });   // after a reload
+    expect(leaderboard.submitDaily).toHaveBeenCalledTimes(1);
+    expect(leaderboard.fetchDaily).toHaveBeenCalledExactlyOnceWith('2026-07-09');
+  });
+
+  it('a date posted by an earlier session (storage) only fetches; a new day submits again', () => {
+    storage.saveKey('daily', { leaderboardSubmittedDate: '2026-07-10' });
+    result.enter({ mode: 'daily', date: '2026-07-10', score: 10 });
+    expect(leaderboard.submitDaily).not.toHaveBeenCalled();
+    expect(leaderboard.fetchDaily).toHaveBeenCalledExactlyOnceWith('2026-07-10');
+    result.exit();
+    result.enter({ mode: 'daily', date: '2026-07-11', score: 12 });
+    expect(leaderboard.submitDaily).toHaveBeenCalledExactlyOnceWith('2026-07-11', 'Player', 12);
+    expect(storage.load().daily.leaderboardSubmittedDate).toBe('2026-07-11');
+  });
+
+  it('a replay leaves the persisted submission date alone', () => {
+    result.enter({ mode: 'daily', date: '2026-07-12', score: 10, isReplay: true });
+    expect(storage.load().daily.leaderboardSubmittedDate).toBeNull();
   });
 
   it('makes no request at all without a date (or outside daily mode)', () => {

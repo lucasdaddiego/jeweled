@@ -24,11 +24,6 @@ let lb = null;
 // Monotonic token so a slow response from a previous result screen can't
 // clobber this one's state.
 let lbToken = 0;
-// Date whose counted run this session already submitted. Browser history can
-// re-enter this scene with the original args (isReplay:false), so without it a
-// Back → Forward would POST the same score again: a duplicate row and one of
-// the three daily submissions per IP burnt.
-let submittedFor = null;
 // Pending press for the release-activated Share button (input.createPressTracker).
 const press = createPressTracker();
 
@@ -49,13 +44,15 @@ export function enter(a = {}) {
   if (args.mode === 'daily' && args.date) {
     const token = ++lbToken;
     const name = storage.getProfile().playerName || 'Player';
-    const alreadySubmitted = args.isReplay || submittedFor === args.date;
-    if (!alreadySubmitted) submittedFor = args.date;
-    // MUST be guarded before the leaderboard goes live (the LEADERBOARD KV
-    // is not bound yet): submittedFor lives in memory only, so Back, reload,
-    // then Forward re-enters this scene with the original args and posts the
-    // same score again. Persist the posted date, or let the server keep one
-    // row per player and day.
+    // The posted date is persisted (daily.leaderboardSubmittedDate), not kept
+    // in memory: browser history re-enters this scene with the original args
+    // (isReplay:false), and Back → reload → Forward would otherwise POST the
+    // same score again: a duplicate row and one of the three daily submissions
+    // per IP burnt. It is written before the request, so a slow or failed
+    // answer can never lead to a second POST either.
+    const alreadySubmitted = args.isReplay
+      || storage.load().daily.leaderboardSubmittedDate === args.date;
+    if (!alreadySubmitted) storage.saveKey('daily', { leaderboardSubmittedDate: args.date });
     const req = alreadySubmitted
       ? leaderboard.fetchDaily(args.date)
       : leaderboard.submitDaily(args.date, name, args.score | 0);

@@ -107,6 +107,22 @@ describe('enter()', () => {
     expect(hasReplayTag).toBe(true);
   });
 
+  it('flags a replay when today was already started (a reload mid-run re-seeds the same board)', () => {
+    storage.saveKey('daily', { startedDate: todayISO() });
+    daily.enter({});
+    const spy = vi.spyOn(render, 'drawText');
+    daily.draw();
+    expect(spy.mock.calls.some(c => c[0] === 'Replay (does not count)')).toBe(true);
+  });
+
+  it('a day started on another date is not a replay', () => {
+    storage.saveKey('daily', { startedDate: '2000-01-01' });
+    daily.enter({});
+    const spy = vi.spyOn(render, 'drawText');
+    daily.draw();
+    expect(spy.mock.calls.some(c => c[0] === 'Replay (does not count)')).toBe(false);
+  });
+
   it('exit() resets the body background', () => {
     daily.enter({});
     daily.exit();
@@ -115,6 +131,24 @@ describe('enter()', () => {
 });
 
 describe('cascade callbacks', () => {
+  it('the first committed move of a counted run marks the day as started, once', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade();
+    expect(storage.load().daily.startedDate).toBeNull();   // the entry animation is not a move
+    c.onMoveCommitted();
+    expect(storage.load().daily.startedDate).toBe(todayISO());
+    storage.load().daily.startedDate = 'sentinel';         // a 2nd move must not rewrite it
+    c.onMoveCommitted();
+    expect(storage.load().daily.startedDate).toBe('sentinel');
+  });
+
+  it('a replay never marks the day as started', () => {
+    storage.saveKey('daily', { todaySubmittedDate: todayISO() });
+    daily.enter({});
+    debugHud.activeCascade().onMoveCommitted();
+    expect(storage.load().daily.startedDate).toBeNull();
+  });
+
   it('onMoveCommitted decrements the move budget', () => {
     daily.enter({});
     const c = debugHud.activeCascade();

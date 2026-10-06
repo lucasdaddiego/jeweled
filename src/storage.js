@@ -28,6 +28,13 @@ function defaultState() {
       totalDaysPlayed: 0,
       history: {},
       todaySubmittedDate: null,
+      // Day whose counted run made its first move (gameDaily): a re-entry on
+      // that day is a replay, so a reload cannot restart the seeded board.
+      startedDate: null,
+      // Day whose score this device already POSTed to the leaderboard
+      // (result): browser history can re-enter the result scene with the
+      // original args, and the date must survive a reload to block a 2nd POST.
+      leaderboardSubmittedDate: null,
     },
     blitz: {
       bestScore: 0,

@@ -34,7 +34,11 @@ export function enter(args = {}) {
   const today = todayISO();
   dailyDate = today;
   const s = storage.load();
-  isReplay = s.daily.todaySubmittedDate === today;
+  // A day counts once: after its result was recorded, and also after its
+  // counted run made a move (startedDate). The seed is the date, so a reload
+  // mid-run re-creates the identical board; without the second check that
+  // was an unlimited retry before the score that counts.
+  isReplay = s.daily.todaySubmittedDate === today || s.daily.startedDate === today;
   prevBest = s.daily.bestEver;
 
   const seed = dateHash();
@@ -51,7 +55,14 @@ export function enter(args = {}) {
   cascade.playEntryAnimation();
 
   wireCascadePresentation(cascade, {
-    onMoveCommitted: () => { movesLeft--; },
+    onMoveCommitted: () => {
+      movesLeft--;
+      // First committed move of the counted run: mark the day as started so
+      // a reload (or the PWA shortcut) resumes as a replay, not a fresh try.
+      if (!isReplay && movesLeft === DAILY_MOVES - 1) {
+        storage.saveKey('daily', { startedDate: dailyDate });
+      }
+    },
     onIdleReached: () => {
       if (movesLeft <= 0 && !resultTriggered) {
         resultTriggered = true;
