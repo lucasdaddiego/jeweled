@@ -328,7 +328,12 @@ export function reloadFromDisk() {
 const EXPORT_PREFIX = 'JWLD1.';
 
 export function exportString() {
-  const bytes = new TextEncoder().encode(JSON.stringify(load()));
+  // The Zen gallery (up to 12 JPEG data URLs, 300-400 KB) stays on the
+  // device: with it the code outgrew what chat apps paste back intact
+  // (Telegram cuts at 4096 chars) and the import then failed with 'parse'.
+  const state = load();
+  const portable = { ...state, zen: { ...state.zen, gallery: [] } };
+  const bytes = new TextEncoder().encode(JSON.stringify(portable));
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return EXPORT_PREFIX + btoa(bin);
@@ -351,10 +356,15 @@ export function importString(code) {
     const rawVersion = Number(parsed.version);
     const older = Number.isInteger(rawVersion) && rawVersion > 0 && rawVersion < STORAGE_VERSION;
     const blob = older ? migrateOrKeep(parsed, rawVersion) : parsed;
+    // Keepsakes are per device: a code without a gallery (every export since
+    // exportString strips it) keeps the paintings already here. An older code
+    // that carries one still replaces them.
+    const localGallery = load().zen.gallery;
     // Same defensive path as load(): defaults + deepMerge so a crafted code
     // can't drop required keys or pollute prototypes.
     cache = deepMerge(defaultState(), blob);
     cache.version = STORAGE_VERSION;
+    if (cache.zen.gallery.length === 0) cache.zen.gallery = localGallery;
     _readOnly = false;
     saveAll();
     return { ok: true };

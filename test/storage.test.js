@@ -377,6 +377,32 @@ describe('exportString / importString', () => {
     expect(JSON.parse(localStorage.getItem(KEY)).profile.playerName).toBe('Ana☃|x');
   });
 
+  it('strips the Zen gallery from the code; an import keeps the device copy', async () => {
+    const { storage } = await fresh();
+    const gallery = [{ dataUrl: 'data:image/jpeg;base64,AAAA', at: '2026-07-01T00:00:00.000Z' }];
+    storage.saveKey('zen', { gallery, bestScore: 5 });
+    const code = storage.exportString();
+    const decoded = JSON.parse(atob(code.slice(PREFIX.length)));
+    expect(decoded.zen.gallery).toEqual([]);                 // keepsakes stay on the device
+    expect(decoded.zen.bestScore).toBe(5);                   // the rest of zen travels
+    expect(Object.keys(decoded)).toEqual(Object.keys(storage.load()));   // same shape + order
+    expect(storage.load().zen.gallery).toEqual(gallery);     // the live state is untouched
+    expect(storage.importString(code)).toEqual({ ok: true });
+    expect(storage.load().zen.gallery).toEqual(gallery);     // a gallery-less code keeps them
+    expect(storage.load().zen.bestScore).toBe(5);
+  });
+
+  it('a code that carries a gallery (older export) replaces the device copy', async () => {
+    const { storage } = await fresh();
+    storage.saveKey('zen', { gallery: [{ dataUrl: 'data:,local', at: 't' }] });
+    const imported = [{ dataUrl: 'data:,imported', at: 'u' }];
+    const res = storage.importString(codeOf(JSON.stringify({
+      profile: { playerName: 'B' }, settings: {}, zen: { gallery: imported },
+    })));
+    expect(res).toEqual({ ok: true });
+    expect(storage.load().zen.gallery).toEqual(imported);
+  });
+
   it('rejects a missing / unprefixed code with reason "format"', async () => {
     const { storage, KEY } = await fresh();
     expect(storage.importString()).toEqual({ ok: false, reason: 'format' });
