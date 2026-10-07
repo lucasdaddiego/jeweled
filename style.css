@@ -53,6 +53,14 @@ canvas#game {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  outline: none;
+}
+/* Keyboard focus on the canvas (tabindex=0): a visible ring, inset so it is
+   not clipped by the viewport edge. :focus-visible keeps it off pointer taps;
+   the focused button / board cell gets its own ring drawn by main.js. */
+canvas#game:focus-visible {
+  outline: 3px solid #d59bff;
+  outline-offset: -3px;
 }
 
 /* Daily has its own cool-toned palette, same drift animation. */

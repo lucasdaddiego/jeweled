@@ -352,6 +352,18 @@ describe('HUD helpers', () => {
     expect('activateOnUp' in buttons[1]).toBe(false);
   });
 
+  it('remembers the buttons[] it pushed to last (keyboard play), until clearHitButtons()', () => {
+    const a = [], b = [];
+    render.clearHitButtons();
+    expect(render.hitButtons()).toBeNull();
+    render.drawHitButton(0, 0, 10, 10, 'a', () => {}, a, 0, 0);
+    expect(render.hitButtons()).toBe(a);
+    render.drawHitButton(0, 0, 10, 10, 'b', () => {}, b, 0, 0);
+    expect(render.hitButtons()).toBe(b);
+    render.clearHitButtons();
+    expect(render.hitButtons()).toBeNull();
+  });
+
   it('drawPowerupSlot covers active/hover/charged/empty + ring states', () => {
     // activeMode + partial ring + some charges
     const rect = render.drawPowerupSlot(10, 10, 60, 70, '🔀', '#7c3aed', 2, 0.5, false, true);
@@ -444,6 +456,23 @@ describe('drawBoard + specials + effects', () => {
     const calls = mainCalls();
     expect(names(calls)).toContain('strokeRect'); // expanding glow ring
     expect(names(calls)).toContain('fillRect');   // body pulse
+  });
+
+  it('frames the keyboard cursor cell (plain, then gold once selected); nothing when unset', () => {
+    const g = plainBoard();
+    const { boardX, boardY, cellSize: cs } = render.layout;
+    const rects = () => mainCalls().filter(c => c[0] === 'strokeRect').map(c => c[1]);
+    render.setKeyboardCursor({ r: 2, c: 3, selected: false });
+    render.drawBoard(g);
+    expect(rects()).toContainEqual([boardX + 3 * cs + 2, boardY + 2 * cs + 2, cs - 4, cs - 4]);
+    mainCalls().length = 0;
+    render.setKeyboardCursor({ r: 0, c: 0, selected: true });
+    render.drawBoard(g);
+    expect(rects()).toContainEqual([boardX + 2, boardY + 2, cs - 4, cs - 4]);
+    mainCalls().length = 0;
+    render.setKeyboardCursor(null);
+    render.drawBoard(g);
+    expect(rects()).toHaveLength(0);
   });
 
   it('debug counter increments only when debug HUD is enabled', () => {

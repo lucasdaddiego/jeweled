@@ -3,7 +3,7 @@
 import { screenToCell } from './render.js';
 
 let canvas = null;
-let listeners = { onTapCell: null, onMove: null, onUp: null, onWheel: null, onCancel: null };
+let listeners = { onTapCell: null, onMove: null, onUp: null, onWheel: null, onCancel: null, onKey: null };
 
 let lastPointerX = 0;
 let lastPointerY = 0;
@@ -28,6 +28,9 @@ export function setup() {
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   // Wheel for scrollable scenes.
   canvas.addEventListener('wheel', onWheel, { passive: false });
+  // Keyboard play (index.html gives the canvas tabindex=0). Keys reach the
+  // canvas only while it has focus, so the page's DOM inputs keep theirs.
+  canvas.addEventListener('keydown', onKeydown);
 }
 
 function onWheel(e) {
@@ -35,6 +38,14 @@ function onWheel(e) {
     e.preventDefault();
     listeners.onWheel(e.deltaY, e.clientX, e.clientY);
   }
+}
+
+// onKey(key, shift) returns true when it consumed the key; only then is the
+// browser default (Tab moving focus, Space scrolling) suppressed. Shortcuts
+// with a modifier stay with the browser (Cmd+R, Ctrl+Tab, Alt+Left).
+function onKeydown(e) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (listeners.onKey && listeners.onKey(e.key, e.shiftKey)) e.preventDefault();
 }
 
 export function on(events) {

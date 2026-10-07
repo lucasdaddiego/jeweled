@@ -11,6 +11,7 @@ import * as i18n from './i18n.js';
 import * as dialogs from './dialogs.js';
 import * as tabLock from './tabLock.js';
 import { todayISO } from './rng.js';
+import { GRID } from './config.js';
 
 // Scene modules
 import * as title from './scenes/title.js';
@@ -107,6 +108,10 @@ function _swapScene(name, args) {
     currentName = 'title';
   }
   currentArgs = args || {};
+  // Keyboard focus and the tracked hit rects belong to the scene that drew
+  // them; the new scene starts clean (its first frame registers its own).
+  clearKeyboardState();
+  render.clearHitButtons();
   // Announce the scene to assistive tech — the canvas is a black box to
   // screen readers, so this hidden live region is the only navigation cue.
   // Scheduled BEFORE enter(): a scene with more to say (result: the score)
@@ -176,6 +181,7 @@ function frame(now) {
   if (current) {
     if (current.update) current.update(dt);
     if (current.draw) current.draw();
+    drawKeyboardFocus();
   }
   // Crossfade overlay — black rect with opacity (1 - sceneAlpha), drawn over
   // the just-painted scene so the new scene fades in.
@@ -330,28 +336,38 @@ function withParkedRun(name, args) {
   return saveState ? { ...args, restoreFrom: saveState } : args;
 }
 
+// Pointer routing. The 'down' and 'up' halves are module-level so keyboard
+// play (below) can deliver a synthetic press through the exact same path.
+function onPointerDown(cell, x, y) {
+  // First user gesture unlocks WebAudio (autoplay policy). Idempotent
+  // and near-free after the first call.
+  sound.unlock();
+  // A real press moves the player off the keyboard: drop the focus ring and
+  // the board cursor. A synthetic press (keyboard) keeps them.
+  if (!_syntheticPress) clearKeyboardState();
+  if (dialogs.handlePointer({ type: 'down', cell, x, y })) return;
+  if (current && current.onPointer) current.onPointer({ type: 'down', cell, x, y });
+}
+
+function onPointerUp(x, y) {
+  // On touch the release, not the press, is the user-activation event, so
+  // the AudioContext resume inside unlock() only succeeds here on a first tap.
+  sound.unlock();
+  if (_swallowNextUp) { _swallowNextUp = false; return; }
+  if (dialogs.handlePointer({ type: 'up', x, y })) return;
+  if (current && current.onPointer) current.onPointer({ type: 'up', x, y });
+}
+
 function setupInput() {
   input.setup();
   input.on({
-    onTapCell: (cell, x, y) => {
-      // First user gesture unlocks WebAudio (autoplay policy). Idempotent
-      // and near-free after the first call.
-      sound.unlock();
-      if (dialogs.handlePointer({ type: 'down', cell, x, y })) return;
-      if (current && current.onPointer) current.onPointer({ type: 'down', cell, x, y });
-    },
+    onTapCell: onPointerDown,
     onMove: (x, y) => {
       if (dialogs.isOpen()) { dialogs.onMove(x, y); return; }
       if (current && current.onMove) current.onMove(x, y);
     },
-    onUp: (x, y) => {
-      // On touch the release, not the press, is the user-activation event, so
-      // the AudioContext resume inside unlock() only succeeds here on a first tap.
-      sound.unlock();
-      if (_swallowNextUp) { _swallowNextUp = false; return; }
-      if (dialogs.handlePointer({ type: 'up', x, y })) return;
-      if (current && current.onPointer) current.onPointer({ type: 'up', x, y });
-    },
+    onUp: onPointerUp,
+    onKey,
     onCancel: (x, y) => {
       // Consume any pending swallow here too, symmetric with 'up' — otherwise
       // a pointercancel (OS gesture, blur) between _swapScene and the real
@@ -365,6 +381,144 @@ function setupInput() {
       if (current && current.onWheel) current.onWheel(dy, x, y);
     },
   });
+}
+
+// === Keyboard play ===
+// index.html gives the canvas tabindex=0 and input.js forwards keydown while
+// it has focus. Tab / Shift+Tab walk the buttons the scene drew this frame
+// (render.hitButtons()), Enter or Space presses the focused one. On a board
+// scene the arrows move a cell cursor, Enter / Space picks the gem up and the
+// next arrow swaps it with that neighbour; Escape drops focus and cursor. On
+// a menu scene the arrows walk the buttons like Tab.
+//
+// A press is delivered as a synthetic pointer down + up at the target's
+// centre, so each scene's own pointer logic (settings-overlay precedence,
+// release-activated buttons, drag-to-swap) handles it unchanged.
+const BOARD_SCENES = new Set(['gameZen', 'gameClassic', 'gameDaily', 'gameBlitz', 'gamePuzzle']);
+const ARROWS = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+let _kbFocus = -1;          // index into focusableButtons(), -1 = none
+let _kbCursor = null;       // { r, c } on a board scene, null = hidden
+let _kbSelected = false;    // the cursor gem is picked up: the next arrow swaps it
+let _syntheticPress = false;
+
+// A modal (power-up overlay) or the settings overlay sits above the rest of
+// the scene and its pointer handler only accepts its own rects; Tab walks the
+// same subset so a press can never land on a button hidden underneath.
+function focusableButtons() {
+  const all = render.hitButtons() || [];
+  const modal = all.filter(b => b.modal);
+  if (modal.length) return modal;
+  const settings = all.filter(b => b.kind === 'settings');
+  return settings.length ? settings : all;
+}
+
+function clearKeyboardState() {
+  _kbFocus = -1;
+  _kbCursor = null;
+  _kbSelected = false;
+  render.setKeyboardCursor(null);
+}
+
+// Down at (x, y), up at (upX, upY): a press when both are the same point, a
+// one-cell drag (dragInput commits the swap) when they are not.
+function syntheticPress(x, y, upX = x, upY = y) {
+  _syntheticPress = true;
+  try {
+    onPointerDown(render.screenToCell(x, y), x, y);
+    onPointerUp(upX, upY);
+  } finally {
+    _syntheticPress = false;
+  }
+}
+
+function focusButton(idx, buttons) {
+  _kbFocus = idx;
+  _kbCursor = null;
+  _kbSelected = false;
+  render.setKeyboardCursor(null);
+  // Scenes draw the hovered look from their own cursor: move it onto the
+  // button so the focus reads as a highlight as well as a ring.
+  const b = buttons[idx];
+  if (current.onMove) current.onMove(b.x + b.w / 2, b.y + b.h / 2);
+}
+
+// Returns true when the key was consumed (input.js then prevents the default).
+function onKey(key, shift) {
+  // Escape / Enter belong to an open dialog (dialogs.js listens on window).
+  if (dialogs.isOpen() || !current) return false;
+  const onBoard = BOARD_SCENES.has(currentName);
+  if (key === 'Tab' || (!onBoard && key in ARROWS)) {
+    const buttons = focusableButtons();
+    if (!buttons.length) return false;
+    const back = key === 'Tab' ? shift : (key === 'ArrowUp' || key === 'ArrowLeft');
+    const n = buttons.length;
+    const next = _kbFocus < 0 ? (back ? n - 1 : 0) : (_kbFocus + (back ? n - 1 : 1)) % n;
+    focusButton(next, buttons);
+    return true;
+  }
+  if (key === 'Enter' || key === ' ') {
+    const buttons = focusableButtons();
+    if (_kbFocus >= 0 && _kbFocus < buttons.length) {
+      const b = buttons[_kbFocus];
+      syntheticPress(b.x + b.w / 2, b.y + b.h / 2);
+      return true;
+    }
+    if (!_kbCursor) return false;
+    _kbSelected = !_kbSelected;
+    render.setKeyboardCursor({ ..._kbCursor, selected: _kbSelected });
+    return true;
+  }
+  if (key === 'Escape') {
+    if (_kbFocus < 0 && !_kbCursor) return false;
+    clearKeyboardState();
+    return true;
+  }
+  if (key in ARROWS) {   // a board scene (menus were handled above)
+    const [dr, dc] = ARROWS[key];
+    _kbFocus = -1;
+    if (!_kbCursor) {
+      _kbCursor = { r: 0, c: 0 };          // the first arrow only shows the cursor
+    } else if (_kbSelected) {
+      swapTowards(dr, dc);
+      _kbSelected = false;
+    } else {
+      _kbCursor = {
+        r: Math.max(0, Math.min(GRID - 1, _kbCursor.r + dr)),
+        c: Math.max(0, Math.min(GRID - 1, _kbCursor.c + dc)),
+      };
+    }
+    render.setKeyboardCursor({ ..._kbCursor, selected: _kbSelected });
+    return true;
+  }
+  return false;
+}
+
+// Swap the cursor gem with its neighbour: down on the gem, up a full cell
+// away, which is past dragInput's commit threshold. Off the board: nothing.
+function swapTowards(dr, dc) {
+  const r = _kbCursor.r + dr, c = _kbCursor.c + dc;
+  if (r < 0 || r >= GRID || c < 0 || c >= GRID) return;
+  const { boardX, boardY, cellSize } = render.layout;
+  syntheticPress(
+    boardX + (_kbCursor.c + 0.5) * cellSize, boardY + (_kbCursor.r + 0.5) * cellSize,
+    boardX + (c + 0.5) * cellSize, boardY + (r + 0.5) * cellSize,
+  );
+}
+
+// Gold ring around the focused button, drawn after the scene each frame.
+function drawKeyboardFocus() {
+  if (_kbFocus < 0) return;
+  const buttons = focusableButtons();
+  if (_kbFocus >= buttons.length) { _kbFocus = -1; return; }   // the scene drew fewer buttons
+  const ctx = render.ctxRef();
+  if (!ctx) return;
+  const b = buttons[_kbFocus];
+  ctx.save();
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 3;
+  render.roundRect(ctx, b.x - 4, b.y - 4, b.w + 8, b.h + 8, 14);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // True when the current scene is at a safe moment to reload (no in-flight

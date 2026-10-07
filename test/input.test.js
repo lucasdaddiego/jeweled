@@ -161,6 +161,34 @@ describe('wheel', () => {
   });
 });
 
+describe('keyboard', () => {
+  const press = (init) => {
+    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    canvas().dispatchEvent(e);
+    return e;
+  };
+
+  it('forwards the key + shift state and prevents the default only for a consumed key', () => {
+    const onKey = vi.fn((k) => k === 'Tab');
+    input.on({ onKey });
+    expect(press({ key: 'Tab', shiftKey: true }).defaultPrevented).toBe(true);
+    expect(onKey).toHaveBeenCalledWith('Tab', true);
+    expect(press({ key: 'a' }).defaultPrevented).toBe(false);     // not consumed
+    expect(onKey).toHaveBeenCalledWith('a', false);
+  });
+
+  it('leaves modifier shortcuts to the browser and is a no-op without a handler', () => {
+    const onKey = vi.fn(() => true);
+    input.on({ onKey });
+    for (const mod of ['altKey', 'ctrlKey', 'metaKey']) {
+      expect(press({ key: 'Tab', [mod]: true }).defaultPrevented).toBe(false);
+    }
+    expect(onKey).not.toHaveBeenCalled();
+    input.on({ onKey: null });
+    expect(press({ key: 'Tab' }).defaultPrevented).toBe(false);
+  });
+});
+
 describe('context menu', () => {
   it('prevents the long-press context menu', () => {
     const e = new Event('contextmenu', { cancelable: true, bubbles: true });

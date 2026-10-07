@@ -24,8 +24,8 @@ const h = vi.hoisted(() => {
   // smoke; a vi.mock throws on access to an export it does not define.
   scenes.result.computeResultLayout = vi.fn();
   const ctxStub = {
-    fillStyle: '', font: '', textAlign: '', textBaseline: '',
-    save() {}, restore() {}, fillRect() {}, fillText() {},
+    fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '', textBaseline: '',
+    save() {}, restore() {}, fillRect() {}, fillText() {}, stroke() {},
     measureText: () => ({ width: 20 }),
   };
   return {
@@ -34,7 +34,11 @@ const h = vi.hoisted(() => {
       setupCanvas: vi.fn(), buildAtlas: vi.fn(), setGemStyle: vi.fn(),
       ctxRef: vi.fn(() => ctxStub),
       getViewport: vi.fn(() => ({ w: 800, h: 600 })),
-      layout: { safeTop: 0 },
+      // Board geometry for the keyboard-cursor tests: cell (r, c) is centred
+      // at (125 + 50c, 125 + 50r).
+      layout: { safeTop: 0, boardX: 100, boardY: 100, cellSize: 50 },
+      hitButtons: vi.fn(() => null), clearHitButtons: vi.fn(),
+      setKeyboardCursor: vi.fn(), screenToCell: vi.fn(() => null), roundRect: vi.fn(),
     },
     input: { setup: vi.fn(), on: vi.fn(), isPointerDown: vi.fn(() => false) },
     storage: { load: vi.fn(), flush: vi.fn(), getSettings: vi.fn(() => ({ sound: true, gemStyle: 'color' })) },
@@ -105,6 +109,8 @@ beforeEach(() => {
     });
   }
   h.input.isPointerDown.mockReturnValue(false);
+  h.render.hitButtons.mockReturnValue(null);
+  h.render.ctxRef.mockReturnValue(h.ctxStub);
   h.dialogs.isOpen.mockReturnValue(false);
   h.dialogs.handlePointer.mockReturnValue(false);
   h.dialogs.consumeBack.mockReturnValue(false);
@@ -581,6 +587,181 @@ describe('input routing', () => {
     h.dialogs.isOpen.mockReturnValue(true);
     cbs.onWheel(10, 1, 2);
     expect(h.scenes.title.onWheel).not.toHaveBeenCalled();
+  });
+});
+
+describe('keyboard play', () => {
+  const btn = (x, y, w = 100, h = 40, extra = {}) => ({ x, y, w, h, onClick: vi.fn(), ...extra });
+  const key = (k, shift = false) => inputCbs().onKey(k, shift);
+
+  it('Tab focuses the first button (hover moves onto it); Enter / Space press it as a pointer down + up at its centre', async () => {
+    await boot();
+    h.render.hitButtons.mockReturnValue([btn(0, 0), btn(0, 100)]);
+    expect(key('Tab')).toBe(true);
+    expect(h.scenes.title.onMove).toHaveBeenCalledWith(50, 20);
+    expect(key('Enter')).toBe(true);
+    expect(h.scenes.title.onPointer).toHaveBeenNthCalledWith(1, { type: 'down', cell: null, x: 50, y: 20 });
+    expect(h.scenes.title.onPointer).toHaveBeenNthCalledWith(2, { type: 'up', x: 50, y: 20 });
+    h.scenes.title.onPointer.mockClear();
+    expect(key(' ')).toBe(true);                        // the focus survived the synthetic press
+    expect(h.scenes.title.onPointer).toHaveBeenCalledTimes(2);
+  });
+
+  it('Tab wraps forward; Shift+Tab walks backward and starts from the last button', async () => {
+    await boot();
+    h.render.hitButtons.mockReturnValue([btn(0, 0), btn(0, 100), btn(0, 200)]);
+    key('Tab', true);                                   // nothing focused → the last one
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 220);
+    key('Tab');                                         // last → wraps to the first
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 20);
+    key('Tab', true);                                   // first → back to the last
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 220);
+  });
+
+  it('on a menu scene the arrows walk the buttons like Tab', async () => {
+    await boot();
+    h.render.hitButtons.mockReturnValue([btn(0, 0), btn(0, 100)]);
+    expect(key('ArrowDown')).toBe(true);
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 20);
+    key('ArrowRight');
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 120);
+    key('ArrowUp');
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 20);
+    key('ArrowLeft');
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 120);
+  });
+
+  it('with nothing to focus, Tab / Enter / Escape / other keys are left to the browser', async () => {
+    await boot();                                       // hitButtons → null
+    expect(key('Tab')).toBe(false);
+    expect(key('Enter')).toBe(false);
+    expect(key('Escape')).toBe(false);
+    expect(key('a')).toBe(false);
+    expect(h.scenes.title.onPointer).not.toHaveBeenCalled();
+  });
+
+  it('keys go to an open dialog untouched', async () => {
+    await boot();
+    h.render.hitButtons.mockReturnValue([btn(0, 0)]);
+    h.dialogs.isOpen.mockReturnValue(true);
+    expect(key('Tab')).toBe(false);
+    expect(key('Enter')).toBe(false);
+    expect(h.scenes.title.onMove).not.toHaveBeenCalled();
+  });
+
+  it('modal rects own the Tab cycle, then settings-kind rects, else every rect', async () => {
+    await boot();
+    const plain = btn(0, 0);
+    const settings = btn(0, 100, 100, 40, { kind: 'settings' });
+    const modal = btn(0, 200, 100, 40, { modal: true });
+    h.render.hitButtons.mockReturnValue([plain, settings, modal]);
+    key('Tab'); key('Tab');                             // only the modal rect cycles
+    expect(h.scenes.title.onMove).toHaveBeenCalledTimes(2);
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 220);
+    h.render.hitButtons.mockReturnValue([plain, settings]);
+    key('Escape'); key('Tab'); key('Tab');              // the overlay's rects only
+    expect(h.scenes.title.onMove).toHaveBeenLastCalledWith(50, 120);
+  });
+
+  it('Escape drops the focus (a second Escape is not consumed); a scene without onMove still focuses', async () => {
+    const main = await boot();
+    h.render.hitButtons.mockReturnValue([btn(0, 0)]);
+    key('Tab');
+    expect(key('Escape')).toBe(true);
+    expect(key('Escape')).toBe(false);
+    main.setScene('gamePuzzle');                        // bare scene: no onMove
+    h.render.hitButtons.mockReturnValue([btn(0, 0)]);
+    expect(() => key('Tab')).not.toThrow();
+  });
+
+  it('a real pointer press drops the keyboard focus; a scene swap drops it and the tracked rects', async () => {
+    const main = await boot();
+    h.render.hitButtons.mockReturnValue([btn(0, 0)]);
+    key('Tab');
+    h.render.setKeyboardCursor.mockClear();
+    inputCbs().onTapCell(null, 5, 5);                   // a real press
+    expect(h.render.setKeyboardCursor).toHaveBeenCalledWith(null);
+    expect(key('Escape')).toBe(false);                  // nothing left to clear
+    key('Tab');
+    h.render.clearHitButtons.mockClear();
+    main.setScene('stats');
+    expect(h.render.clearHitButtons).toHaveBeenCalled();
+    expect(key('Escape')).toBe(false);
+  });
+
+  describe('board scenes', () => {
+    const centre = (r, c) => ({ x: 125 + 50 * c, y: 125 + 50 * r });
+
+    it('the first arrow shows the cursor at (0,0); later arrows move it, clamped to the board', async () => {
+      const main = await boot();
+      main.setScene('gameBlitz');
+      expect(key('ArrowUp')).toBe(true);
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 0, selected: false });
+      key('ArrowRight');
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 1, selected: false });
+      key('ArrowUp');                                   // clamped at the top edge
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 1, selected: false });
+      for (let i = 0; i < 9; i++) key('ArrowDown');     // clamped at the bottom edge
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 7, c: 1, selected: false });
+      expect(h.scenes.gameBlitz.onPointer).not.toHaveBeenCalled();   // moving never presses
+    });
+
+    it('Enter picks the gem up; the next arrow swaps it (down on the gem, up on the neighbour)', async () => {
+      const main = await boot();
+      main.setScene('gameBlitz');
+      key('ArrowRight');                                // shows the cursor at (0,0)
+      key('ArrowRight');                                // (0,1)
+      expect(key('Enter')).toBe(true);
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 1, selected: true });
+      key('ArrowDown');
+      const from = centre(0, 1), to = centre(1, 1);
+      expect(h.render.screenToCell).toHaveBeenCalledWith(from.x, from.y);
+      expect(h.scenes.gameBlitz.onPointer).toHaveBeenNthCalledWith(1, { type: 'down', cell: null, x: from.x, y: from.y });
+      expect(h.scenes.gameBlitz.onPointer).toHaveBeenNthCalledWith(2, { type: 'up', x: to.x, y: to.y });
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 1, selected: false });
+      key(' '); key(' ');                               // Space toggles the pick-up off again, no swap
+      expect(h.scenes.gameBlitz.onPointer).toHaveBeenCalledTimes(2);
+    });
+
+    it('a swap off the board edge is dropped (it only deselects)', async () => {
+      const main = await boot();
+      main.setScene('gameBlitz');
+      key('ArrowLeft');                                 // cursor (0,0)
+      key('Enter');
+      key('ArrowUp');                                   // (-1, 0): off the board
+      expect(h.scenes.gameBlitz.onPointer).not.toHaveBeenCalled();
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 0, selected: false });
+    });
+
+    it('a focused HUD button yields to the cursor on the first arrow; Tab hides the cursor again', async () => {
+      const main = await boot();
+      main.setScene('gameBlitz');
+      h.render.hitButtons.mockReturnValue([btn(0, 0)]);
+      key('Tab');
+      key('ArrowDown');                                 // shows the cursor, drops the focus
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith({ r: 0, c: 0, selected: false });
+      key('Tab');
+      expect(h.render.setKeyboardCursor).toHaveBeenLastCalledWith(null);
+      expect(key('Enter')).toBe(true);                  // presses the button, not the cursor
+      expect(h.scenes.gameBlitz.onPointer).toHaveBeenCalledWith({ type: 'down', cell: null, x: 50, y: 20 });
+    });
+  });
+
+  it('the frame rings the focused button, and forgets a focus the scene no longer draws', async () => {
+    await boot();
+    h.render.hitButtons.mockReturnValue([btn(10, 10)]);
+    key('Tab');
+    flushRAF(16);
+    expect(h.render.roundRect).toHaveBeenCalledWith(h.ctxStub, 6, 6, 108, 48, 14);
+    h.render.roundRect.mockClear();
+    h.render.ctxRef.mockReturnValue(null);              // no drawing context this frame
+    flushRAF(32);
+    expect(h.render.roundRect).not.toHaveBeenCalled();
+    h.render.ctxRef.mockReturnValue(h.ctxStub);
+    h.render.hitButtons.mockReturnValue([]);            // the scene drew no buttons
+    flushRAF(48);
+    expect(h.render.roundRect).not.toHaveBeenCalled();
+    expect(key('Escape')).toBe(false);                  // the focus was dropped
   });
 });
 

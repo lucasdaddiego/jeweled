@@ -404,6 +404,19 @@ export function clearFrame() {
 
 export function ctxRef() { return ctx; }
 
+// === Keyboard play (main.js) ===
+// The hit-rect array the current scene drew into last: every scene passes its
+// own `buttons[]` to drawHitButton, so the most recent one is the live set
+// main.js walks with Tab. Rects a scene pushes directly (toggles, pills, the
+// view-source link) share that array and are covered too.
+let frameButtons = null;
+export function hitButtons() { return frameButtons; }
+export function clearHitButtons() { frameButtons = null; }
+// Board cell the keyboard cursor sits on ({ r, c, selected }) or null. Drawn
+// by drawBoard inside the shake/wobble transform so it tracks the swayed gem.
+let keyboardCursor = null;
+export function setKeyboardCursor(cursor) { keyboardCursor = cursor; }
+
 // === Coordinate helpers ===
 // The idle-wobble rotation drawBoard applied last frame (angle 0 = none).
 // screenToCell turns a tap back by it, so hit-testing picks the gem the
@@ -541,6 +554,17 @@ export function drawBoard(grid, opts = {}) {
       drawGemWithEffects(ctx, cell, x, y, cs);
       ctx.globalAlpha = 1;
     }
+  }
+
+  // Keyboard cursor: a frame around the focused cell, gold once the gem is
+  // picked up (the next arrow swaps it).
+  if (keyboardCursor) {
+    ctx.save();
+    ctx.strokeStyle = keyboardCursor.selected ? '#ffd166' : 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = Math.max(2, cs * 0.06);
+    ctx.strokeRect(layout.boardX + keyboardCursor.c * cs + 2, layout.boardY + keyboardCursor.r * cs + 2,
+      cs - 4, cs - 4);
+    ctx.restore();
   }
 
   // Ice overlays (Classic modifier) — drawn over the gems at their GRID
@@ -917,6 +941,7 @@ export function drawHitButton(x, y, w, h, label, onClick, buttons, cursorX, curs
   // Fire on the release of a press that started here (input.createPressTracker).
   if (opts.activateOnUp) btn.activateOnUp = true;
   buttons.push(btn);
+  frameButtons = buttons;
 }
 
 export function drawButton(x, y, w, h, label, opts = {}) {

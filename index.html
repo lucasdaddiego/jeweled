@@ -21,7 +21,9 @@
   <link rel="modulepreload" href="/src/main.js">
 </head>
 <body>
-  <canvas id="game" role="application" aria-label="Jeweled game board"></canvas>
+  <!-- tabindex=0: the canvas takes keyboard focus. Tab / arrows / Enter walk
+       and press the drawn buttons and move a board cursor (src/main.js). -->
+  <canvas id="game" role="application" aria-label="Jeweled game board" tabindex="0"></canvas>
   <!-- Screen-reader announcements (scene changes, results). The canvas is
        invisible to assistive tech; this is its voice. -->
   <div id="sr-live" aria-live="polite" role="status"></div>

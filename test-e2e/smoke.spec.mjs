@@ -27,10 +27,13 @@
 //      a real touchscreen tap: View source opens a popup to the repo, Share
 //      calls navigator.share with the card image, and without a share sheet
 //      the same tap reaches navigator.clipboard.writeText.
-//   8. One active tab: a second tab blocks and cannot write over the first
+//   8. Keyboard play with real key events on the focused canvas: Tab + Enter
+//      start a Zen run from the title, arrows + Enter swap a gem, Tab + Enter
+//      on End finalize the run.
+//   9. One active tab: a second tab blocks and cannot write over the first
 //      tab's save, takes over when the first tab closes, and "Play here" moves
 //      the save to the tab that asks.
-//   9. Zero console errors and zero uncaught page errors across all of it.
+//  10. Zero console errors and zero uncaught page errors across all of it.
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -210,6 +213,65 @@ async function runTouchPhase(browser, base, consoleErrors, pageErrors) {
 }
 
 // ---------------------------------------------------------------------------
+// Keyboard play: a whole run from the keyboard, with real key events.
+// ---------------------------------------------------------------------------
+// The canvas is focusable (tabindex=0). Tab focuses the first title button
+// (Zen: a fresh profile has no parked run) and Enter presses it. On the board
+// the arrows move a cursor, Enter picks the gem up and the next arrow swaps it
+// with the neighbour. Tab then focuses End (the first HUD button) and Enter
+// finalizes the run. A saved player name keeps the DOM name-entry modal,
+// which blocks the canvas, away.
+
+async function runKeyboardPhase(browser, base, consoleErrors, pageErrors) {
+  const context = await browser.newContext({ viewport: { width: 900, height: 700 }, serviceWorkers: 'block' });
+  await context.addInitScript(() => {
+    localStorage.setItem('gem-match:v1', JSON.stringify({ profile: { playerName: 'E2E' } }));
+  });
+  const page = await context.newPage();
+  page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+  page.on('pageerror', (err) => pageErrors.push(String((err && err.stack) || err)));
+  await page.goto(`${base}/`, { waitUntil: 'load', timeout: 15_000 });
+  await page.waitForFunction(() => window.__game && window.__game.clockMs() > 600, null, { timeout: 10_000 });
+  const idle = () => page.waitForFunction(
+    () => window.__zen && window.__zen.cascade && window.__zen.cascade.state === 'IDLE',
+    null, { timeout: 10_000, polling: 100 },
+  );
+
+  await page.locator('canvas#game').focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await idle();
+  step('keyboard: Tab + Enter on the title started a Zen run');
+
+  // Whether the swap matches depends on the random board (a non-match bounces
+  // back and stays IDLE), so record the cascade call the keys must produce.
+  await page.evaluate(() => {
+    const cascade = window.__zen.cascade;
+    const orig = cascade.tryStartSwap.bind(cascade);
+    window.__e2eSwaps = [];
+    cascade.tryStartSwap = (a, b) => { window.__e2eSwaps.push([a, b]); return orig(a, b); };
+  });
+  for (const k of ['ArrowRight', 'ArrowRight', 'Enter', 'ArrowDown']) await page.keyboard.press(k);
+  const swaps = JSON.stringify(await page.evaluate(() => window.__e2eSwaps));
+  assert(swaps === JSON.stringify([[{ r: 0, c: 1 }, { r: 1, c: 1 }]]),
+    `arrows + Enter + arrow asked the cascade to swap (0,1) with (1,1) (got ${swaps})`);
+  await idle();
+  step('keyboard: arrows + Enter + arrow swapped the cursor gem with its neighbour');
+
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__zen === undefined, null, { timeout: 5_000, polling: 100 });
+  const runs = await page.evaluate(() => {
+    window.__game.storage.flush();
+    return JSON.parse(localStorage.getItem('gem-match:v1')).zen.totalRunsPlayed;
+  });
+  assert(runs === 1, `Tab + Enter on End finalized the run (totalRunsPlayed ${runs})`);
+  step('keyboard: Tab + Enter on End finalized the run and returned to the title');
+
+  await context.close();
+}
+
+// ---------------------------------------------------------------------------
 // One active tab: two pages of one context share localStorage and Web Locks.
 // ---------------------------------------------------------------------------
 
@@ -365,6 +427,7 @@ async function main() {
     assert(zenGone, 'window.__zen cleaned up after leaving gameZen');
     step('returned to title, __zen cleaned up');
 
+
     // --- Persistence ------------------------------------------------------------
     // Saves are debounced (~250ms); flush() forces the pending write so the
     // check is deterministic rather than sleep-based.
@@ -412,6 +475,9 @@ async function main() {
     // --- Touch: release-activated buttons ------------------------------------
     // Runs before the error tally below so its console/page errors count too.
     await runTouchPhase(browser, base, consoleErrors, pageErrors);
+
+    // --- Keyboard play ---------------------------------------------------------
+    await runKeyboardPhase(browser, base, consoleErrors, pageErrors);
 
     // --- One active tab --------------------------------------------------------
     await runTabLockPhase(browser, base, consoleErrors, pageErrors);
