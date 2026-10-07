@@ -3,8 +3,13 @@
 # the service-worker cache key and the BUILD constant during the build step,
 # using $GITHUB_SHA — no extra CI logic needed.
 #
+# Three jobs: `test` (the reusable gate in test.yml), `bundle` (build, bundle,
+# syntax-check and smoke-test the production tree, then upload dist/ as an
+# artifact) and `deploy` (the reusable lucasdaddiego/.github cloudflare-deploy
+# workflow: it downloads that artifact and runs wrangler).
+#
 # Actions are pinned to commit SHAs (the tag in the comment is what Dependabot
-# bumps): this job holds the Cloudflare token, so a moved tag must not be able
+# bumps): the deploy holds the Cloudflare token, so a moved tag must not be able
 # to run foreign code here.
 
 name: Deploy to Cloudflare Pages
@@ -29,7 +34,7 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
 
-  deploy:
+  bundle:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -210,14 +215,30 @@ jobs:
       - name: Smoke-test the production bundle
         run: node test-e2e/smoke.spec.mjs
 
-      # Run wrangler directly instead of via cloudflare/wrangler-action — the
-      # action's own version probe always reinstalls regardless of cache state.
-      # --commit-dirty=true silences the "uncommitted changes" warning that
-      # build.sh's untracked dist/ would otherwise trigger.
-      - name: Deploy to Cloudflare Pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          node_modules/.bin/wrangler pages deploy dist \
-            --project-name=jeweled --branch=master --commit-dirty=true
+      # The deploy job runs on another runner: hand it the finished dist/.
+      - name: Upload dist/ for the deploy job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  # The deploy itself (checkout, Node, the artifact download, wrangler) is the
+  # reusable lucasdaddiego/.github cloudflare-deploy workflow. @main on purpose:
+  # my own public repo, and the actions are SHA-pinned there. Nothing to install
+  # or build here: dist/ is the artifact from `bundle`. --commit-dirty=true
+  # silences the "uncommitted changes" warning the downloaded dist/ would
+  # otherwise trigger.
+  deploy:
+    needs: bundle
+    uses: lucasdaddiego/.github/.github/workflows/cloudflare-deploy.yml@main
+    with:
+      install: ""
+      artifact: dist
+      artifact-path: dist
+      wrangler-command: pages deploy dist --project-name=jeweled --branch=master --commit-dirty=true
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # The account id is a repo secret here, so it travels under `secrets:` (not available in `with:`).
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
