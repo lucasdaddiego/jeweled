@@ -5,7 +5,11 @@
 import * as render from '../render.js';
 import * as storage from '../storage.js';
 import * as i18n from '../i18n.js';
-import { setScene } from '../main.js';
+import { setScene, invalidate } from '../main.js';
+
+// A menu scene: main.js skips idle frames (see invalidate() there) and only
+// redraws on input, a scene swap, a resize, or when this scene asks for it.
+export const isStatic = true;
 
 let buttons = [];
 let cursorX = 0, cursorY = 0;
@@ -17,6 +21,9 @@ function imageFor(dataUrl) {
   let img = imgCache.get(dataUrl);
   if (!img) {
     img = new Image();
+    // Decoding is async: the frame that created the image drew an empty
+    // tile, and main.js skips idle frames on this scene — ask for a redraw.
+    img.onload = () => invalidate();
     img.src = dataUrl;
     imgCache.set(dataUrl, img);
   }

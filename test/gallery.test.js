@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { installCanvas, setViewport } from './helpers.js';
 
 // gallery imports render (-> main) and main directly.
-vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn() }));
+vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn(), invalidate: vi.fn() }));
 
 import * as render from '../src/render.js';
 import * as storage from '../src/storage.js';
@@ -98,6 +98,27 @@ describe('gallery: rendering', () => {
     const ys = drawFrame().filter((c) => c[0] === 'fillText' && c[1][0] === label).map((c) => c[1][2]);
     expect(ys).toHaveLength(12);
     expect(Math.max(...ys) + 11).toBeLessThanOrEqual(vh);   // 11px date label under each tile
+  });
+
+  it('asks main for a redraw once a thumbnail finishes decoding (this scene skips idle frames)', async () => {
+    const { invalidate } = await import('../src/main.js');
+    // Capture the load handler the scene installs on each new Image (a cached
+    // data URL never creates a second one, so use a unique URL).
+    const proto = window.HTMLImageElement.prototype;
+    const orig = Object.getOwnPropertyDescriptor(proto, 'onload');
+    const handlers = [];
+    Object.defineProperty(proto, 'onload', { configurable: true, set(fn) { handlers.push(fn); }, get() { return null; } });
+    try {
+      storage.saveKey('zen', { gallery: [{ dataUrl: 'data:image/png;base64,onload-probe', at: '2024-03-05T12:00:00.000Z' }] });
+      gallery.enter();
+      gallery.draw();
+    } finally {
+      if (orig) Object.defineProperty(proto, 'onload', orig); else delete proto.onload;
+    }
+    expect(handlers).toHaveLength(1);
+    expect(invalidate).not.toHaveBeenCalled();
+    handlers[0]();
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   it('empty gallery shows the empty hint (and enter() clears a leftover body class)', () => {

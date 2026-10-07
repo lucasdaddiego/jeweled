@@ -56,6 +56,15 @@ describe('update / pump', () => {
     expect(drawnCardCount()).toBe(1);
   });
 
+  it('isActive() reports a card on screen (main.js keeps drawing frames while one shows)', () => {
+    expect(toasts.isActive()).toBe(false);
+    queue.push(toast());
+    toasts.update(16);
+    expect(toasts.isActive()).toBe(true);
+    toasts.update(LIFE_MS);
+    expect(toasts.isActive()).toBe(false);
+  });
+
   it('keeps a young toast and removes it once it outlives LIFE_MS', () => {
     queue.push(toast());
     toasts.update(100);                 // age 100 -> alive

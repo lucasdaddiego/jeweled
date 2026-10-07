@@ -5,14 +5,15 @@ import { installCanvas, setViewport } from './helpers.js';
 // title.js imports ../main.js (setScene, clockMs). Mock it (hoisted) so importing
 // the scene doesn't boot the whole game under jsdom. clockMs is constant so the
 // brand-title shimmer math is deterministic.
-vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn() }));
+vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn(), invalidate: vi.fn() }));
 
 import * as render from '../src/render.js';
 import * as storage from '../src/storage.js';
 import * as i18n from '../src/i18n.js';
 import * as dialogs from '../src/dialogs.js';
 import * as sound from '../src/sound.js';
-import { setScene } from '../src/main.js';
+import { setScene, invalidate } from '../src/main.js';
+import { StubOffscreenCanvas } from './helpers.js';
 import { todayISO } from '../src/rng.js';
 import { NAME_MAX_LEN } from '../src/config.js';
 import { PUZZLES } from '../src/puzzles.js';
@@ -117,7 +118,17 @@ describe('enter / exit', () => {
     expect(document.querySelectorAll('#name-input-wrap')).toHaveLength(1);
   });
 
-  it('update(dt) is a no-op', () => {
+  it('update(dt) asks for one redraw per minute (countdown + midnight), nothing in between', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2031, 0, 1, 12, 0, 30));
+    title.update(16);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    title.update(16);
+    expect(invalidate).toHaveBeenCalledTimes(1);     // same minute
+    vi.setSystemTime(new Date(2031, 0, 1, 12, 1, 0));
+    title.update(16);
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
     expect(() => title.update(16)).not.toThrow();
   });
 });
@@ -132,6 +143,7 @@ describe('name entry', () => {
     document.getElementById('name-submit').click();
     expect(storage.getProfile().playerName).toBe('Grace');
     expect(document.getElementById('name-input-wrap')).toBeNull();
+    expect(invalidate).toHaveBeenCalled();   // a DOM click: the canvas must redraw
   });
 
   it('truncates an over-long name to NAME_MAX_LEN', () => {
@@ -443,6 +455,54 @@ describe('draw — content branches', () => {
 });
 
 // --- viewport-dependent layout branches ------------------------------------
+
+describe('brand title', () => {
+  // The baked OffscreenCanvas is the first drawImage of a title frame (the
+  // heatmap is fillRects, nothing else blits).
+  const brandCanvas = () => {
+    const c = render.ctxRef().__calls.find((cc) => cc[0] === 'drawImage');
+    return c && c[1][0];
+  };
+
+  it('is baked once per size (halo pass, crisp pass, stroke) and blitted on every frame', () => {
+    seedName('Ada');
+    title.enter();
+    title.draw();
+    const baked = brandCanvas();
+    expect(baked).toBeInstanceOf(StubOffscreenCanvas);
+    const calls = baked.getContext('2d').__calls;
+    expect(calls.filter((c) => c[0] === 'fillText' && c[1][0] === i18n.t('title.brand'))).toHaveLength(2);
+    expect(calls.some((c) => c[0] === 'strokeText')).toBe(true);
+    const ctx = render.ctxRef();
+    // The main context no longer paints the glyphs itself.
+    expect(ctx.__calls.some((c) => c[0] === 'fillText' && c[1][0] === i18n.t('title.brand'))).toBe(false);
+    ctx.__calls.length = 0;
+    title.draw();
+    expect(brandCanvas()).toBe(baked);                 // cache hit: same bake
+    // A narrow viewport uses a smaller font → a fresh bake.
+    setViewport(420, 820, 1);
+    render.setupCanvas();
+    render.ctxRef().__calls.length = 0;
+    title.draw();
+    expect(brandCanvas()).not.toBe(baked);
+  });
+
+  it('bakes at the device pixel ratio, falling back to 1 for a missing value', () => {
+    seedName('Ada');
+    title.enter();
+    setViewport(800, 600, 2);
+    render.setupCanvas();
+    title.draw();
+    const hi = brandCanvas();
+    setViewport(800, 600, 0);                          // devicePixelRatio || 1
+    render.setupCanvas();
+    render.ctxRef().__calls.length = 0;
+    title.draw();
+    const lo = brandCanvas();
+    expect(lo).not.toBe(hi);
+    expect(hi.width).toBe(lo.width * 2);
+  });
+});
 
 describe('draw — responsive layout', () => {
   function btnHeightAt(w, h) {

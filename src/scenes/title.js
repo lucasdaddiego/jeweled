@@ -7,7 +7,7 @@ import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
 import { todayISO } from '../rng.js';
 import { dailyStreak, msUntilNextDaily, countdownParts } from '../dailyMeta.js';
-import { setScene, clockMs } from '../main.js';
+import { setScene, invalidate } from '../main.js';
 import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
@@ -17,6 +17,10 @@ import { startNewRun } from '../parkedRun.js';
 
 // Public source repository — linked from the title footer.
 const REPO_URL = 'https://github.com/lucasdaddiego/jeweled';
+
+// A menu scene: main.js skips idle frames (see invalidate() there) and only
+// redraws on input, a scene swap, a resize, or when this scene asks for it.
+export const isStatic = true;
 
 let buttons = [];          // hit-test rects: { x, y, w, h, onClick, hover }
 let nameInputWrap = null;
@@ -44,7 +48,14 @@ export function exit() {
   settingsOpen = false;
 }
 
-export function update(dt) {}
+// main.js skips idle frames on this scene, but two things here move without
+// input: the Daily subtitle counts down to the next board in minutes, and the
+// heatmap / "done today" state flips at midnight. One redraw per minute.
+let _lastMinute = -1;
+export function update(dt) {
+  const minute = Math.floor(Date.now() / 60_000);
+  if (minute !== _lastMinute) { _lastMinute = minute; invalidate(); }
+}
 
 export function draw() {
   const { w, h } = render.getViewport();
@@ -256,46 +267,63 @@ export function draw() {
   if (settingsOpen) drawSettingsOverlay();
 }
 
-// Brand title: animated gem-tone gradient with pulsing glow.
-// Pure decorative — no hit rect, no interaction.
+// Brand title: gem-tone gradient with a soft halo, baked once per (text,
+// size, device pixel ratio) into an OffscreenCanvas and blitted since. It
+// used to repaint a 56px glyph run twice per frame with shadowBlur 22-34 and
+// a fresh gradient, the single most expensive thing on the menu; with the
+// menu now skipping idle frames (main.js invalidate) the per-frame shimmer
+// went with it. Pure decorative — no hit rect, no interaction.
+const BRAND_PAD = 40;   // room for the halo (blur 28 + offset) on every side
+let brandCache = null;  // { key, canvas, w, h }
+
 function drawBrandTitle(text, cx, y, fontPx) {
   const ctx = render.ctxRef();
-  const t = clockMs() / 1000;
-  ctx.save();
-  ctx.font = `900 ${fontPx}px -apple-system, system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const key = `${text}|${fontPx}|${dpr}`;
+  if (!brandCache || brandCache.key !== key) brandCache = bakeBrandTitle(text, fontPx, dpr, key);
+  const { canvas, w, h } = brandCache;
+  ctx.drawImage(canvas, cx - w / 2 - BRAND_PAD, y - BRAND_PAD, w + BRAND_PAD * 2, h + BRAND_PAD * 2);
+}
 
-  const textW = ctx.measureText(text).width;
+function bakeBrandTitle(text, fontPx, dpr, key) {
+  const font = `900 ${fontPx}px -apple-system, system-ui, sans-serif`;
+  const measure = render.ctxRef();
+  measure.save();
+  measure.font = font;
+  const w = Math.ceil(measure.measureText(text).width);
+  measure.restore();
+  const h = Math.ceil(fontPx * 1.3);   // textBaseline 'top': the glyph box is ~1.2-1.3 em tall
+  const canvas = new OffscreenCanvas(Math.ceil((w + BRAND_PAD * 2) * dpr), Math.ceil((h + BRAND_PAD * 2) * dpr));
+  const c = canvas.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.font = font;
+  c.textAlign = 'center';
+  c.textBaseline = 'top';
+  const tx = BRAND_PAD + w / 2;
+  const ty = BRAND_PAD;
 
-  // Pulsing outer glow (warm halo behind the glyphs).
-  const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
-  ctx.shadowColor = `rgba(180, 110, 255, ${0.55 + pulse * 0.30})`;
-  ctx.shadowBlur = 22 + pulse * 12;
-  ctx.shadowOffsetY = 2;
-
-  // Gem-tone gradient that drifts horizontally for a slow shimmer.
-  const pan = Math.sin(t * 0.5) * (textW * 0.4);
-  const grad = ctx.createLinearGradient(cx - textW + pan, 0, cx + textW + pan, 0);
+  // Outer glow (warm halo behind the glyphs).
+  c.shadowColor = 'rgba(180, 110, 255, 0.7)';
+  c.shadowBlur = 28;
+  c.shadowOffsetY = 2;
+  // Gem-tone gradient across the glyph run.
+  const grad = c.createLinearGradient(tx - w, 0, tx + w, 0);
   grad.addColorStop(0.00, '#ff9ec0'); // pink
   grad.addColorStop(0.25, '#d59bff'); // light purple
   grad.addColorStop(0.50, '#8fd1ff'); // sky blue
   grad.addColorStop(0.75, '#d59bff');
   grad.addColorStop(1.00, '#ff9ec0');
-  ctx.fillStyle = grad;
-  ctx.fillText(text, cx, y);
-
+  c.fillStyle = grad;
+  c.fillText(text, tx, ty);
   // Second pass without the glow keeps the glyph edges crisp.
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-  ctx.fillText(text, cx, y);
-
+  c.shadowBlur = 0;
+  c.shadowOffsetY = 0;
+  c.fillText(text, tx, ty);
   // Thin highlight stroke for extra polish.
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = 1;
-  ctx.strokeText(text, cx, y);
-
-  ctx.restore();
+  c.strokeStyle = 'rgba(255,255,255,0.35)';
+  c.lineWidth = 1;
+  c.strokeText(text, tx, ty);
+  return { key, canvas, w, h };
 }
 
 function drawHitButton(x, y, w, h, label, onClick, opts = {}) {
@@ -593,6 +621,7 @@ function showNameEntry() {
     storage.saveKey('profile', { playerName: name });
     needsNameEntry = false;
     hideNameEntry();
+    invalidate();   // a DOM click, not a canvas event: ask for the redraw
   };
   submit.addEventListener('click', tryCommit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') tryCommit(); });
@@ -636,6 +665,7 @@ function showImportEntry(prefill = '') {
     if (prefill) { hideImportEntry(); return; }
     const res = storage.importString(input.value);
     hideImportEntry();
+    invalidate();   // a DOM click, not a canvas event: ask for the redraw
     if (res.ok) {
       // Re-derive everything the imported blob controls.
       i18n.init();

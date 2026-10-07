@@ -41,6 +41,10 @@ const CARD_H = 92;
 const CARD_GAP = 12;
 const SCROLL_THRESHOLD = 8;
 
+// A menu scene: main.js skips idle frames (see invalidate() there) and only
+// redraws on input, a scene swap, a resize, or when this scene asks for it.
+export const isStatic = true;
+
 let buttons = [];
 let cursorX = 0, cursorY = 0;
 let scrollY = 0;

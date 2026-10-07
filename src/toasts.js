@@ -28,6 +28,12 @@ export function update(dt) {
   }
 }
 
+// main.js keeps drawing frames while a toast is on screen (menu scenes skip
+// idle frames otherwise).
+export function isActive() {
+  return active.length > 0;
+}
+
 export function draw() {
   if (active.length === 0) return;
   const ctx = render.ctxRef();

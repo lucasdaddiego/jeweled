@@ -65,6 +65,20 @@ let _hudCounters = { findMatches: 0, drawBoard: 0 };   // snapshotted per frame
 let _clockMs = 0;
 export function clockMs() { return _clockMs; }
 
+// === Idle frames ===
+// Menu scenes (`export const isStatic = true`) change only on input, a scene
+// swap, a resize, an async arrival (leaderboard rows, a gallery image) or a
+// value they poll (the title's countdown). Every frame still cleared and
+// repainted the whole screen, and the title painted a glowing 56px brand
+// twice per frame: a phone left on the menu kept its GPU busy for nothing.
+// On a static scene the frame now skips draw() until something calls
+// invalidate(). Game scenes animate every frame and never skip; so do frames
+// with a dialog or a toast on screen, the crossfade, and the debug HUD.
+let _dirty = true;
+let _overlayShown = false;   // dialog or toast visible last frame
+let _drawnViewport = '';     // "w x h" the last frame drew for (resize detection)
+export function invalidate() { _dirty = true; }
+
 // Scene crossfade — sceneAlpha is the OPACITY of the new scene during a swap.
 // We reset to 0 on swap and tween to 1 over CROSSFADE_MS while the scene draws.
 const CROSSFADE_MS = 220;
@@ -108,6 +122,7 @@ function _swapScene(name, args) {
     currentName = 'title';
   }
   currentArgs = args || {};
+  _dirty = true;
   // Keyboard focus and the tracked hit rects belong to the scene that drew
   // them; the new scene starts clean (its first frame registers its own).
   clearKeyboardState();
@@ -178,8 +193,24 @@ function frame(now) {
     debugHud.recordFrame(dt);
   }
 
+  if (current && current.update) current.update(dt);
+  // Toasts tick every frame (an unlock can arrive on a static scene).
+  toasts.update(dt);
+
+  // Idle frame? See invalidate(). A dialog / toast appearing or leaving
+  // redraws once each way: the frame with it draws the scene underneath,
+  // the frame after it clears it off the canvas.
+  const overlay = dialogs.isOpen() || toasts.isActive();
+  if (overlay !== _overlayShown) { _overlayShown = overlay; _dirty = true; }
+  const { w, h } = render.getViewport();
+  const viewport = `${w}x${h}`;
+  if (viewport !== _drawnViewport) { _drawnViewport = viewport; _dirty = true; }
+  const idle = !!current && !!current.isStatic && !_dirty && !overlay
+    && crossfadeT >= CROSSFADE_MS && !_dbg;
+  if (idle) { requestAnimationFrame(frame); return; }
+  _dirty = false;
+
   if (current) {
-    if (current.update) current.update(dt);
     if (current.draw) current.draw();
     drawKeyboardFocus();
   }
@@ -189,14 +220,12 @@ function frame(now) {
     crossfadeT = Math.min(CROSSFADE_MS, crossfadeT + dt);
     sceneAlpha = crossfadeT / CROSSFADE_MS;
     const ctx = render.ctxRef();
-    const { w, h } = render.getViewport();
     if (ctx) {
       ctx.fillStyle = `rgba(0, 0, 0, ${1 - sceneAlpha})`;
       ctx.fillRect(0, 0, w, h);
     }
   }
   // Global overlays drawn on top of every scene
-  toasts.update(dt);
   toasts.draw();
   dialogs.draw();
   if (_dbg) drawDebugHud();
@@ -252,7 +281,9 @@ function drawDebugHud() {
 function setupVisibility() {
   document.addEventListener('visibilitychange', () => {
     paused = document.hidden;
-    if (!paused) { lastFrameTime = performance.now(); return; }
+    // Back from the background: a browser may have dropped the canvas
+    // backing store meanwhile, so the next frame repaints even when idle.
+    if (!paused) { lastFrameTime = performance.now(); _dirty = true; return; }
     // Going background: persist pending debounced writes now. iOS can freeze or
     // discard the tab after 'hidden' without ever firing a reliable 'pagehide',
     // which would otherwise drop the session's most important write (end-of-run
@@ -339,6 +370,7 @@ function withParkedRun(name, args) {
 // Pointer routing. The 'down' and 'up' halves are module-level so keyboard
 // play (below) can deliver a synthetic press through the exact same path.
 function onPointerDown(cell, x, y) {
+  _dirty = true;
   // First user gesture unlocks WebAudio (autoplay policy). Idempotent
   // and near-free after the first call.
   sound.unlock();
@@ -350,6 +382,7 @@ function onPointerDown(cell, x, y) {
 }
 
 function onPointerUp(x, y) {
+  _dirty = true;
   // On touch the release, not the press, is the user-activation event, so
   // the AudioContext resume inside unlock() only succeeds here on a first tap.
   sound.unlock();
@@ -363,12 +396,14 @@ function setupInput() {
   input.on({
     onTapCell: onPointerDown,
     onMove: (x, y) => {
+      _dirty = true;   // hover highlights
       if (dialogs.isOpen()) { dialogs.onMove(x, y); return; }
       if (current && current.onMove) current.onMove(x, y);
     },
     onUp: onPointerUp,
     onKey,
     onCancel: (x, y) => {
+      _dirty = true;
       // Consume any pending swallow here too, symmetric with 'up' — otherwise
       // a pointercancel (OS gesture, blur) between _swapScene and the real
       // 'up' would leak the flag onto the next gesture's release.
@@ -377,6 +412,7 @@ function setupInput() {
       if (current && current.onPointer) current.onPointer({ type: 'cancel', x, y });
     },
     onWheel: (dy, x, y) => {
+      _dirty = true;
       if (dialogs.isOpen()) return;
       if (current && current.onWheel) current.onWheel(dy, x, y);
     },
@@ -444,6 +480,7 @@ function focusButton(idx, buttons) {
 
 // Returns true when the key was consumed (input.js then prevents the default).
 function onKey(key, shift) {
+  _dirty = true;
   // Escape / Enter belong to an open dialog (dialogs.js listens on window).
   if (dialogs.isOpen() || !current) return false;
   const onBoard = BOARD_SCENES.has(currentName);

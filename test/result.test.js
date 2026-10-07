@@ -5,7 +5,7 @@ import { installCanvas, setViewport } from './helpers.js';
 // import-time main.init(). dialogs.alert() returns a promise that only settles
 // on a button press, so mock it to resolve immediately (the clipboard share
 // path awaits it).
-vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn(), announce: vi.fn() }));
+vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn(), announce: vi.fn(), invalidate: vi.fn() }));
 vi.mock('../src/dialogs.js', () => ({ alert: vi.fn().mockResolvedValue(undefined) }));
 // The daily leaderboard client is network-only; default both calls to the
 // "no backend" answer ({ok:false} hides the block) and let individual tests
@@ -28,7 +28,7 @@ import * as i18n from '../src/i18n.js';
 import * as dialogs from '../src/dialogs.js';
 import * as leaderboard from '../src/leaderboard.js';
 import { shareCard } from '../src/shareImage.js';
-import { setScene, announce } from '../src/main.js';
+import { setScene, announce, invalidate } from '../src/main.js';
 import { LEVELS } from '../src/levels.js';
 import { PUZZLES } from '../src/puzzles.js';
 import * as result from '../src/scenes/result.js';
@@ -388,6 +388,14 @@ describe('result: daily leaderboard', () => {
     result.enter({ mode: 'blitz', score: 5, date: '2026-06-26' });
     expect(leaderboard.submitDaily).not.toHaveBeenCalled();
     expect(leaderboard.fetchDaily).not.toHaveBeenCalled();
+  });
+
+  it('asks main for a redraw once the leaderboard answers (this scene skips idle frames)', async () => {
+    leaderboard.submitDaily.mockResolvedValueOnce({ ok: true, entries: [] });
+    result.enter({ mode: 'daily', date: '2026-07-20', score: 1 });
+    expect(invalidate).not.toHaveBeenCalled();
+    await tick();
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   it('stays hidden while loading and when the backend answers {ok:false}', async () => {

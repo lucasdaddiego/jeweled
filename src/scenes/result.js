@@ -9,13 +9,17 @@ import * as leaderboard from '../leaderboard.js';
 import { shareCard } from '../shareImage.js';
 import { createPressTracker, hitTest } from '../input.js';
 import { buildShareText } from '../dailyMeta.js';
-import { setScene, announce } from '../main.js';
+import { setScene, announce, invalidate } from '../main.js';
 import { LEVELS } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
 
 const SITE_URL = 'https://jeweled.daddiego.com.ar';
 
 let args = {};
+// A menu scene: main.js skips idle frames (see invalidate() there) and only
+// redraws on input, a scene swap, a resize, or when this scene asks for it.
+export const isStatic = true;
+
 let buttons = [];
 let cursorX = 0, cursorY = 0;
 // Daily leaderboard state: null = loading/off, {ok:false} = backend absent
@@ -61,7 +65,9 @@ export function enter(a = {}) {
     const req = alreadySubmitted
       ? leaderboard.fetchDaily(args.date)
       : leaderboard.submitDaily(args.date, name, args.score | 0);
-    req.then(res => { if (token === lbToken) lb = res; });
+    // The block appears when the answer lands: ask main for the redraw (this
+    // scene skips idle frames).
+    req.then(res => { if (token === lbToken) { lb = res; invalidate(); } });
   }
 }
 export function exit() {}

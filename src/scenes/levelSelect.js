@@ -7,6 +7,10 @@ import { setScene } from '../main.js';
 import { startNewRun } from '../parkedRun.js';
 import { LEVELS, LEVELS_PER_PAGE, pageCount, pageOfLevel } from '../levels.js';
 
+// A menu scene: main.js skips idle frames (see invalidate() there) and only
+// redraws on input, a scene swap, a resize, or when this scene asks for it.
+export const isStatic = true;
+
 let buttons = [];
 let cursorX = 0, cursorY = 0;
 let currentPage = 1;

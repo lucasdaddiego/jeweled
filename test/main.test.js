@@ -5,9 +5,11 @@ import { flushRAF, installCanvas } from './helpers.js';
 // routing, SW update). We mock every collaborator so we can drive each branch
 // directly and assert routing, not real scene/render behavior.
 const h = vi.hoisted(() => {
+  // isStatic is read on every frame; a vi.mock throws on a missing export,
+  // so every scene declares it (false = draws every frame, like a game scene).
   const makeScene = () => ({
     enter: vi.fn(), exit: vi.fn(), update: vi.fn(), draw: vi.fn(),
-    onPointer: vi.fn(), onMove: vi.fn(), onWheel: vi.fn(),
+    onPointer: vi.fn(), onMove: vi.fn(), onWheel: vi.fn(), isStatic: false,
   });
   const sceneNames = ['title', 'levelSelect', 'gameZen', 'gameClassic', 'gameDaily',
     'gameBlitz', 'gamePuzzle', 'puzzleSelect', 'stats', 'result'];
@@ -18,7 +20,7 @@ const h = vi.hoisted(() => {
   // hit their false arms. No other test navigates to gamePuzzle.
   scenes.gamePuzzle = {
     enter: undefined, exit: undefined, update: undefined, draw: undefined,
-    onPointer: undefined, onMove: undefined, onWheel: undefined,
+    onPointer: undefined, onMove: undefined, onWheel: undefined, isStatic: undefined,
   };
   // main re-exports this pure layout helper on window.__game for the e2e
   // smoke; a vi.mock throws on access to an export it does not define.
@@ -43,7 +45,7 @@ const h = vi.hoisted(() => {
     input: { setup: vi.fn(), on: vi.fn(), isPointerDown: vi.fn(() => false) },
     storage: { load: vi.fn(), flush: vi.fn(), getSettings: vi.fn(() => ({ sound: true, gemStyle: 'color' })) },
     achievements: { flushPlayTime: vi.fn() },
-    toasts: { update: vi.fn(), draw: vi.fn() },
+    toasts: { update: vi.fn(), draw: vi.fn(), isActive: vi.fn(() => false) },
     i18n: { init: vi.fn(), setLanguage: vi.fn(), getLocale: vi.fn(() => 'en'), t: vi.fn((k) => k) },
     dialogs: {
       draw: vi.fn(), isOpen: vi.fn(() => false), handlePointer: vi.fn(() => false),
@@ -111,6 +113,8 @@ beforeEach(() => {
   h.input.isPointerDown.mockReturnValue(false);
   h.render.hitButtons.mockReturnValue(null);
   h.render.ctxRef.mockReturnValue(h.ctxStub);
+  h.render.getViewport.mockReturnValue({ w: 800, h: 600 });
+  h.toasts.isActive.mockReturnValue(false);
   h.dialogs.isOpen.mockReturnValue(false);
   h.dialogs.handlePointer.mockReturnValue(false);
   h.dialogs.consumeBack.mockReturnValue(false);
@@ -762,6 +766,94 @@ describe('keyboard play', () => {
     flushRAF(48);
     expect(h.render.roundRect).not.toHaveBeenCalled();
     expect(key('Escape')).toBe(false);                  // the focus was dropped
+  });
+});
+
+describe('idle frames on static (menu) scenes', () => {
+  // Off-localhost: on localhost the debug HUD is on and every frame draws.
+  const quiet = { hostname: 'jeweled.example', search: '', hash: '#title', reload: vi.fn() };
+  let t = 0;
+  // 50 ms steps: six of them clear the 220 ms crossfade.
+  const frames = (n) => { for (let i = 0; i < n; i++) flushRAF(t += 50); };
+
+  beforeEach(() => { h.scenes.stats.isStatic = true; t = 0; vi.stubGlobal('location', quiet); });
+  afterEach(() => { h.scenes.stats.isStatic = false; });
+
+  async function onStats() {
+    const main = await boot();
+    main.setScene('stats');
+    frames(6);                                        // crossfade done
+    h.scenes.stats.draw.mockClear();
+    return main;
+  }
+
+  it('skips draw() (and every overlay draw) once nothing changed; update() and toasts still tick', async () => {
+    await onStats();
+    h.scenes.stats.update.mockClear();
+    h.toasts.update.mockClear();
+    h.toasts.draw.mockClear();
+    frames(3);
+    expect(h.scenes.stats.draw).not.toHaveBeenCalled();
+    expect(h.toasts.draw).not.toHaveBeenCalled();
+    expect(h.scenes.stats.update).toHaveBeenCalledTimes(3);
+    expect(h.toasts.update).toHaveBeenCalledTimes(3);
+  });
+
+  it('a scene that is not static draws every frame', async () => {
+    const main = await boot();
+    main.setScene('gameZen');
+    frames(6);
+    h.scenes.gameZen.draw.mockClear();
+    frames(3);
+    expect(h.scenes.gameZen.draw).toHaveBeenCalledTimes(3);
+  });
+
+  it('input, invalidate(), a resize and a visibility resume each buy exactly one frame', async () => {
+    const main = await onStats();
+    const cbs = inputCbs();
+    const oneFrame = (trigger) => {
+      trigger();
+      frames(2);
+      expect(h.scenes.stats.draw).toHaveBeenCalledTimes(1);
+      h.scenes.stats.draw.mockClear();
+    };
+    oneFrame(() => cbs.onMove(1, 1));
+    oneFrame(() => cbs.onTapCell(null, 1, 1));
+    oneFrame(() => cbs.onUp(1, 1));
+    oneFrame(() => cbs.onCancel(1, 1));
+    oneFrame(() => cbs.onWheel(1, 1, 1));
+    oneFrame(() => cbs.onKey('x', false));
+    oneFrame(() => main.invalidate());
+    oneFrame(() => h.render.getViewport.mockReturnValue({ w: 1000, h: 600 }));
+    oneFrame(() => {
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  });
+
+  it('a dialog or a toast keeps the frames drawing, plus one frame after it leaves', async () => {
+    await onStats();
+    h.dialogs.isOpen.mockReturnValue(true);
+    frames(3);
+    expect(h.scenes.stats.draw).toHaveBeenCalledTimes(3);
+    h.dialogs.isOpen.mockReturnValue(false);
+    frames(3);
+    expect(h.scenes.stats.draw).toHaveBeenCalledTimes(4);   // one more frame clears it off
+    h.toasts.isActive.mockReturnValue(true);
+    frames(2);
+    expect(h.scenes.stats.draw).toHaveBeenCalledTimes(6);
+    h.toasts.isActive.mockReturnValue(false);
+    frames(2);
+    expect(h.scenes.stats.draw).toHaveBeenCalledTimes(7);
+  });
+
+  it('never idles with the debug HUD on (localhost)', async () => {
+    vi.stubGlobal('location', { hostname: 'localhost', search: '', hash: '#title', reload: vi.fn() });
+    await onStats();
+    frames(3);
+    expect(h.scenes.stats.draw).toHaveBeenCalledTimes(3);
   });
 });
 

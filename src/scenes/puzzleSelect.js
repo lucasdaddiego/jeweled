@@ -6,6 +6,10 @@ import * as i18n from '../i18n.js';
 import { setScene } from '../main.js';
 import { PUZZLES } from '../puzzles.js';
 
+// A menu scene: main.js skips idle frames (see invalidate() there) and only
+// redraws on input, a scene swap, a resize, or when this scene asks for it.
+export const isStatic = true;
+
 let buttons = [];
 let cursorX = 0, cursorY = 0;
 let scrollY = 0;
