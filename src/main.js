@@ -558,6 +558,41 @@ function drawKeyboardFocus() {
   ctx.restore();
 }
 
+// === Install (PWA) ===
+// Chromium fires beforeinstallprompt once the app qualifies for install and
+// lets the page defer it. Keeping the event gives the title an Install
+// button in-game instead of relying on the browser's own hidden affordance.
+// Safari has no such event, so the button simply never appears there.
+let _installPrompt = null;
+export function canInstall() { return _installPrompt !== null; }
+
+// Shows the browser's install prompt (needs user activation: the title fires
+// this on the release of a tap). Resolves true when the player accepted.
+// A deferred event works once; the browser fires a new one when it wants.
+export function promptInstall() {
+  const e = _installPrompt;
+  if (!e) return Promise.resolve(false);
+  _installPrompt = null;
+  _dirty = true;
+  return Promise.resolve()
+    .then(() => e.prompt())
+    .then(() => e.userChoice)
+    .then((choice) => choice.outcome === 'accepted')
+    .catch(() => false);
+}
+
+function setupInstall() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();   // no mini-infobar: the title draws its own button
+    _installPrompt = e;
+    _dirty = true;
+  });
+  window.addEventListener('appinstalled', () => {
+    _installPrompt = null;
+    _dirty = true;
+  });
+}
+
 // True when the current scene is at a safe moment to reload (no in-flight
 // game). 'result' is deliberately NOT here: reloading the instant the score
 // screen enters would eat the payoff moment — the update lands on the next
@@ -587,6 +622,7 @@ function init() {
   setupInput();
   setupVisibility();
   setupHistoryNav();
+  setupInstall();
 
   // Bootstrap initial scene. Use replaceState so a single browser-back from title
   // leaves the page rather than re-displaying it. A #hash naming a directly

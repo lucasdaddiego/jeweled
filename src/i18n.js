@@ -59,6 +59,7 @@ const en = {
   'tab.elsewhere':          'Jeweled is open in another tab. Only one tab can save progress, so this one is paused.',
   'tab.playHere':           'Play here',
   'title.viewSource':      'View source',
+  'title.install':         'Install app',
   'title.zen':             '🧘  Zen',
   'title.classic':         '🎯  Classic',
   'title.daily':           '📅  Daily',
@@ -396,6 +397,7 @@ const es = {
   'tab.elsewhere':          'Jeweled está abierto en otra pestaña. Solo una pestaña puede guardar el progreso, así que esta está en pausa.',
   'tab.playHere':           'Jugar aquí',
   'title.viewSource':      'Ver código',
+  'title.install':         'Instalar app',
   // Mode chips stay branded English by design.
   'title.zenBest':         'Mejor: {score}',
   'title.zenEndless':      'Infinito · siempre resoluble',

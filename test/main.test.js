@@ -84,6 +84,16 @@ vi.mock('../src/scenes/result.js', () => h.scenes.result);
 // Capture the input callback bundle main registers via input.on({...}).
 function inputCbs() { return h.input.on.mock.calls.at(-1)[0]; }
 
+// A Chromium-style beforeinstallprompt event: cancelable, with prompt() and
+// the userChoice promise.
+function fireInstallPrompt(prompt = vi.fn(() => Promise.resolve()), outcome = 'accepted') {
+  const e = new Event('beforeinstallprompt', { cancelable: true });
+  e.prompt = prompt;
+  e.userChoice = Promise.resolve({ outcome });
+  window.dispatchEvent(e);
+  return e;
+}
+
 async function boot() {
   vi.resetModules();
   installCanvas();
@@ -824,6 +834,8 @@ describe('idle frames on static (menu) scenes', () => {
     oneFrame(() => cbs.onWheel(1, 1, 1));
     oneFrame(() => cbs.onKey('x', false));
     oneFrame(() => main.invalidate());
+    oneFrame(() => fireInstallPrompt());               // the title gains its Install pill
+    oneFrame(() => window.dispatchEvent(new Event('appinstalled')));   // ...and loses it
     oneFrame(() => h.render.getViewport.mockReturnValue({ w: 1000, h: 600 }));
     oneFrame(() => {
       Object.defineProperty(document, 'hidden', { value: true, configurable: true });
@@ -854,6 +866,41 @@ describe('idle frames on static (menu) scenes', () => {
     await onStats();
     frames(3);
     expect(h.scenes.stats.draw).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('install prompt (beforeinstallprompt)', () => {
+  it('defers the event (default prevented) and offers it to the title via canInstall()', async () => {
+    const main = await boot();
+    expect(main.canInstall()).toBe(false);
+    const e = fireInstallPrompt();
+    expect(e.defaultPrevented).toBe(true);
+    expect(main.canInstall()).toBe(true);
+  });
+
+  it('promptInstall() shows the prompt once and resolves to the player\'s acceptance', async () => {
+    const main = await boot();
+    const e = fireInstallPrompt();
+    await expect(main.promptInstall()).resolves.toBe(true);
+    expect(e.prompt).toHaveBeenCalledTimes(1);
+    expect(main.canInstall()).toBe(false);                      // a deferred event works once
+    await expect(main.promptInstall()).resolves.toBe(false);    // nothing to show
+    expect(e.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves false on a dismissed choice or a prompt() failure', async () => {
+    const main = await boot();
+    fireInstallPrompt(vi.fn(() => Promise.resolve()), 'dismissed');
+    await expect(main.promptInstall()).resolves.toBe(false);
+    fireInstallPrompt(vi.fn(() => Promise.reject(new Error('no user gesture'))));
+    await expect(main.promptInstall()).resolves.toBe(false);
+  });
+
+  it('appinstalled drops the deferred event', async () => {
+    const main = await boot();
+    fireInstallPrompt();
+    window.dispatchEvent(new Event('appinstalled'));
+    expect(main.canInstall()).toBe(false);
   });
 });
 

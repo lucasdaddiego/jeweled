@@ -9,6 +9,16 @@
   <meta name="theme-color" content="#7c3aed">
   <meta name="description" content="A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.">
   <title>Jeweled</title>
+  <!-- Link previews (chat apps, social cards). The image must be an absolute
+       URL; the 512px install icon doubles as the card. -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Jeweled">
+  <meta property="og:description" content="A polished match-3 puzzle game — Zen, Classic, Daily, Blitz, and Puzzles.">
+  <meta property="og:url" content="https://jeweled.daddiego.com.ar/">
+  <meta property="og:image" content="https://jeweled.daddiego.com.ar/icons/icon-512.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta name="twitter:card" content="summary">
   <!-- Cloudflare serves this same site on jeweled.pages.dev as well as the
        custom domain, and a static robots.txt cannot tell the two hosts apart.
        Without this, Google indexes both and picks a canonical itself. -->
@@ -31,6 +41,9 @@
     <div class="boot-gem"></div>
     <div class="boot-title">JEWELED</div>
     <div class="boot-dots"><span></span><span></span><span></span></div>
+    <!-- With scripts blocked the dots would pulse forever; say why. The CSP
+         (style-src 'self') rules out an inline <style>, so the dots stay. -->
+    <noscript><div class="boot-error">Jeweled needs JavaScript to run — please enable it. / Jeweled necesita JavaScript — actívalo para jugar.</div></noscript>
   </div>
   <script type="module" src="/src/main.js" data-cfasync="false"></script>
 </body>

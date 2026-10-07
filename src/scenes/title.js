@@ -7,7 +7,7 @@ import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
 import { todayISO } from '../rng.js';
 import { dailyStreak, msUntilNextDaily, countdownParts } from '../dailyMeta.js';
-import { setScene, invalidate } from '../main.js';
+import { setScene, invalidate, canInstall, promptInstall } from '../main.js';
 import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
 import { PUZZLES } from '../puzzles.js';
@@ -219,6 +219,7 @@ export function draw() {
 
   // Heatmap, centered horizontally
   drawHeatmap(state.playHistory, Math.floor((w - hmW) / 2), y, hmWeeks, hmDays, hmCell, hmGap);
+  const heatmapBottom = y + hmH + labelH;
 
   // Build tag — tiny, low-contrast, bottom-right. Lets you confirm at a
   // glance which deploy is loaded without taking up real estate. Lifted off
@@ -262,6 +263,19 @@ export function draw() {
       onClick: () => window.open(REPO_URL, '_blank', 'noopener,noreferrer'),
       activateOnUp: true,
     });
+  }
+
+  // Install (PWA) — a small pill centred in the footer, only while the
+  // browser holds an install prompt for us (main.canInstall) and the heatmap
+  // leaves room above the footer line. The prompt needs user activation, so
+  // the pill fires on the release of the tap like the link beside it.
+  if (canInstall()) {
+    const pillW = 130, pillH = 30;
+    const py = h - 6 - sab - pillH;
+    if (py - 8 >= heatmapBottom) {
+      drawHitButton((w - pillW) / 2, py, pillW, pillH, i18n.t('title.install'),
+        () => { promptInstall(); }, { kind: 'secondary', activateOnUp: true });
+    }
   }
 
   if (settingsOpen) drawSettingsOverlay();

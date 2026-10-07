@@ -5,14 +5,17 @@ import { installCanvas, setViewport } from './helpers.js';
 // title.js imports ../main.js (setScene, clockMs). Mock it (hoisted) so importing
 // the scene doesn't boot the whole game under jsdom. clockMs is constant so the
 // brand-title shimmer math is deterministic.
-vi.mock('../src/main.js', () => ({ clockMs: () => 0, setScene: vi.fn(), invalidate: vi.fn() }));
+vi.mock('../src/main.js', () => ({
+  clockMs: () => 0, setScene: vi.fn(), invalidate: vi.fn(),
+  canInstall: vi.fn(() => false), promptInstall: vi.fn(),
+}));
 
 import * as render from '../src/render.js';
 import * as storage from '../src/storage.js';
 import * as i18n from '../src/i18n.js';
 import * as dialogs from '../src/dialogs.js';
 import * as sound from '../src/sound.js';
-import { setScene, invalidate } from '../src/main.js';
+import { setScene, invalidate, canInstall, promptInstall } from '../src/main.js';
 import { StubOffscreenCanvas } from './helpers.js';
 import { todayISO } from '../src/rng.js';
 import { NAME_MAX_LEN } from '../src/config.js';
@@ -35,6 +38,7 @@ beforeEach(() => {
   render.buildAtlas();
   storage.reset();
   i18n.init();
+  canInstall.mockReturnValue(false);
   // Spy that records every drawHitButton call while still drawing + pushing the
   // hit rect. arg[4]=label, arg[5]=onClick, arg[6]=the live buttons[] reference.
   renderSpy = vi.spyOn(render, 'drawHitButton');
@@ -501,6 +505,37 @@ describe('brand title', () => {
     const lo = brandCanvas();
     expect(lo).not.toBe(hi);
     expect(hi.width).toBe(lo.width * 2);
+  });
+});
+
+describe('install button (PWA)', () => {
+  function drawAt(w, h) {
+    seedName('Ada');
+    setViewport(w, h, 1);
+    render.setupCanvas();
+    title.enter();
+    title.draw();
+  }
+
+  it('is absent while the browser holds no install prompt', () => {
+    drawAt(800, 900);
+    expect(() => rectByLabel(i18n.t('title.install'))).toThrow();
+  });
+
+  it('shows a footer pill once a prompt is deferred; the release of a tap shows the prompt', () => {
+    canInstall.mockReturnValue(true);
+    drawAt(800, 900);
+    const r = rectByLabel(i18n.t('title.install'));
+    down(r);
+    expect(promptInstall).not.toHaveBeenCalled();     // needs user activation → on release
+    up(r);
+    expect(promptInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays out of the way when the heatmap reaches the footer line (short window)', () => {
+    canInstall.mockReturnValue(true);
+    drawAt(800, 600);
+    expect(() => rectByLabel(i18n.t('title.install'))).toThrow();
   });
 });
 
