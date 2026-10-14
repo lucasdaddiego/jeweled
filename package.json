@@ -30,7 +30,7 @@
     "esbuild": "0.28.2",
     "html-minifier-terser": "7.2.0",
     "jsdom": "^30.1.1",
-    "playwright": "^1.63.0",
+    "playwright": "^1.64.0",
     "vitest": "4.1.11",
     "wrangler": "^4.146.0"
   },
