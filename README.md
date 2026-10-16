@@ -23,7 +23,7 @@ renderer — no framework, no runtime dependencies.
 | **Classic** | 300 levels — hit the score target before you run out of moves. Ice levels demand melting every frost cell; every 10th level is a **boss** that starts with ticking time bombs. |
 | **Blitz** | 60-second score attack with ⏱ **+time gems** and a speed-streak bonus for chaining fast moves. |
 | **Zen** | Endless, no fail state. Park it any time (Back or close the tab) and resume from the title. Painting mode keeps a gallery of your finished canvases. |
-| **Daily** | One deterministic board per day (seeded from the date), 30 moves, max score. Streaks, a calendar history, share cards, and an optional online leaderboard. |
+| **Daily** | One deterministic board per day (seeded from the date), 30 moves, max score. The counted run parks like Zen and resumes the same day. Streaks, a calendar history, share cards, and an optional online leaderboard. |
 | **Puzzles** | Goal challenges; the newest ones are hand-laid boards with designed solutions. |
 
 Plus special gems (line clears, color bombs, fire, lightning, star, wildcard…),
