@@ -241,8 +241,10 @@ export function draw() {
     // exit() doesn't double-finalize either.
     if (runEndedScore != null) return;
     finalizeRun(cascade.score);
+    // replace: the ended run leaves history with it, so Back from the title
+    // does not start a fresh 0-point Zen run that Continue would then offer.
     if (painting.isEnabled()) offerSavePainting();
-    else setScene('title');
+    else setScene('title', {}, { replace: true });
   }, buttons, cursorX, cursorY);
 
   drawHintButton(contentR - btnW - 48, hudY + 2, cascade, grid, (h) => { hint = h; }, buttons, cursorX, cursorY, 36);
@@ -302,7 +304,7 @@ async function offerSavePainting() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
   }
-  setScene('title');
+  setScene('title', {}, { replace: true });
 }
 
 function handleOverlayModalButton(evt) {

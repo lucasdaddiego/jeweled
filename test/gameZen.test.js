@@ -275,7 +275,7 @@ describe('End button + finalizeRun', () => {
     const spy = vi.spyOn(render, 'drawHitButton');
     zen.draw();
     spy.mock.calls[0][5]();                        // End onClick
-    expect(setScene).toHaveBeenCalledWith('title');
+    expect(setScene).toHaveBeenCalledWith('title', {}, { replace: true });
     expect(storage.load().zen.bestScore).toBe(500);
     expect(storage.load().zen.totalRunsPlayed).toBe(1);
     expect(storage.load().zen.saveState).toBeNull();
@@ -351,7 +351,7 @@ describe('offerSavePainting (End with painting enabled)', () => {
     expect(createSpy).toHaveBeenCalled();
     expect(clickSpy).toHaveBeenCalled();
     expect(revokeSpy).toHaveBeenCalled();
-    expect(setScene).toHaveBeenCalledWith('title');
+    expect(setScene).toHaveBeenCalledWith('title', {}, { replace: true });
   });
 
   it('confirm but a null blob still navigates to title (no download)', async () => {
@@ -364,7 +364,7 @@ describe('offerSavePainting (End with painting enabled)', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
       expect(createSpy).not.toHaveBeenCalled();    // blob null -> download skipped
-      expect(setScene).toHaveBeenCalledWith('title');
+      expect(setScene).toHaveBeenCalledWith('title', {}, { replace: true });
     } finally {
       OffscreenCanvas.prototype.convertToBlob = orig;
     }
@@ -377,7 +377,7 @@ describe('offerSavePainting (End with painting enabled)', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); // confirm -> false
     await Promise.resolve(); await Promise.resolve();
     expect(createSpy).not.toHaveBeenCalled();
-    expect(setScene).toHaveBeenCalledWith('title');
+    expect(setScene).toHaveBeenCalledWith('title', {}, { replace: true });
   });
 });
 
@@ -675,7 +675,7 @@ describe('gallery capture (End with painting enabled)', () => {
     expect(gallery).toHaveLength(1);
     expect(gallery[0].dataUrl).toBe('data:image/jpeg;base64,x');
     expect(gallery[0].at).toBeTruthy();
-    expect(setScene).toHaveBeenCalledWith('title');
+    expect(setScene).toHaveBeenCalledWith('title', {}, { replace: true });
   });
 
   it('a null thumbnail (nothing painted / encode failed) leaves the gallery untouched', async () => {
@@ -688,7 +688,7 @@ describe('gallery capture (End with painting enabled)', () => {
     vi.spyOn(painting, 'thumbnailDataURL').mockRejectedValue(new Error('boom'));
     await endRunWithPainting();
     expect(storage.load().zen.gallery).toEqual([]);
-    expect(setScene).toHaveBeenCalledWith('title');
+    expect(setScene).toHaveBeenCalledWith('title', {}, { replace: true });
   });
 });
 

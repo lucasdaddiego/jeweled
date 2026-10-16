@@ -393,6 +393,17 @@ describe('setScene / history', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('replaces the finished game entry when a run ends on the result', async () => {
+    const main = await boot();
+    main.setScene('gameBlitz');
+    const push = vi.spyOn(history, 'pushState');
+    const replace = vi.spyOn(history, 'replaceState');
+    main.setScene('result', { mode: 'blitz', score: 1 });
+    expect(replace).toHaveBeenCalledWith(
+      { scene: 'result', args: { mode: 'blitz', score: 1 } }, '', '#result');
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('replaces when args carry a non-serializable restoreFrom', async () => {
     const main = await boot();
     const replace = vi.spyOn(history, 'replaceState');

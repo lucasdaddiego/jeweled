@@ -86,8 +86,12 @@ let sceneAlpha = 1;          // 0 = scene invisible (black overlay), 1 = fully v
 let crossfadeT = 0;          // 0..CROSSFADE_MS — counter
 
 export function setScene(name, args = {}, opts = {}) {
-  // Auto-replace in two situations:
+  // Auto-replace in three situations:
   //   - Coming from a transient source (result → next).
+  //   - Going to the result: the run that just ended takes its history entry
+  //     with it. A pushed result left #gameBlitz behind it, and Back from the
+  //     result (or from the title after it) re-entered that scene and started
+  //     a new timed run.
   //   - Continuing into a scene via `restoreFrom`: the snapshot can't be
   //     serialized into history.state (too big), so pushing an entry would
   //     leave a forward-nav stub that re-enters the scene with empty args —
@@ -95,7 +99,8 @@ export function setScene(name, args = {}, opts = {}) {
   //     fresh L1 / 0-score snapshot. Replacing avoids the orphan entry.
   const replace = opts.replace ?? (
     (args && args.restoreFrom != null) ||
-    (currentName != null && TRANSIENT_SOURCES.has(currentName))
+    (currentName != null && TRANSIENT_SOURCES.has(currentName)) ||
+    name === 'result'
   );
   _swapScene(name, args);
   // Mirror the scene change into browser history so back/forward navigate scenes.
