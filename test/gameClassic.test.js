@@ -399,6 +399,7 @@ describe('onPointer + Back button + overlay routing', () => {
   it('a milestone modal: tapping a fill slot allocates a charge (handleOverlayModalButton true)', () => {
     classic.enter({ level: 1 });
     const c = debugHud.activeCascade();
+    runToIdle(classic, c);                          // picks wait for the board to settle
     c.onScoreChanged(1500, 1500);
     expect(overlay.isModalOpen()).toBe(true);
     const slotSpy = vi.spyOn(render, 'drawPowerupSlot');

@@ -326,6 +326,27 @@ describe('milestone popup', () => {
     expect(overlay.isModalOpen()).toBe(true);
   });
 
+  it('does not open when every slot is full (it would only eat the next tap)', () => {
+    setCharges(Object.fromEntries(POWERUP_SLOTS.map((k) => [k, POWERUP_MAX_CHARGES])));
+    overlay.notifyMilestoneEarned(1);
+    expect(overlay.isModalOpen()).toBe(false);
+    expect(overlay.getPendingMilestones()).toBe(1);      // still owed, banked as usual
+  });
+
+  it('ignores a pick while the cascade runs; the same pick works once idle', () => {
+    overlay.notifyMilestoneEarned(1);
+    const pick = milestoneButtons()[0];
+    const before = { ...powerups.getCharges() };
+    cascade.state = STATE.FALLING;
+    pick.onClick();
+    expect(powerups.getCharges()).toEqual(before);       // no charge before the board settles
+    expect(overlay.isModalOpen()).toBe(true);
+    cascade.state = STATE.IDLE;
+    pick.onClick();
+    expect(overlay.isModalOpen()).toBe(false);
+    expect(powerups.getCharges()).not.toEqual(before);
+  });
+
   it('renders full slots as un-clickable (no button) and dims them', () => {
     setCharges({ shuffle: POWERUP_MAX_CHARGES });        // shuffle full
     overlay.notifyMilestoneEarned(1);

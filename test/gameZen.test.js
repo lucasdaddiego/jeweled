@@ -385,6 +385,7 @@ describe('onPointer: power-up overlay routing', () => {
   it('a milestone modal: tapping a fill slot adds a charge and closes the popup (handleOverlayModalButton true)', () => {
     zen.enter({});
     const c = debugHud.activeCascade();
+    runToIdle(zen, c);                          // picks wait for the board to settle
     c.onScoreChanged(1500, 1500);                  // earns 1 milestone -> opens picker
     expect(overlay.isModalOpen()).toBe(true);
     const slotSpy = vi.spyOn(render, 'drawPowerupSlot');

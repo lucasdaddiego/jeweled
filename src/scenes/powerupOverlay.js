@@ -80,7 +80,10 @@ export function isModalOpen() {
 export function notifyMilestoneEarned(count) {
   if (count <= 0) return;
   pendingMilestones += count;
-  milestonePopup = true;
+  // Same rule as setPendingMilestones / maybeShowSavedMilestone: with every
+  // slot full the popup had no button to press and only ate the next board
+  // tap. The charge stays pending (banked or forfeited as usual).
+  milestonePopup = powerups.hasAvailableSlot();
   sound.milestoneDing();
 }
 
@@ -306,14 +309,18 @@ function doPostInstantPowerup() {
 }
 
 function onMilestonePicked(slot) {
+  // Picks wait for the board to settle. A charge is written to storage at
+  // once, but the parked run is snapshotted only at idle: a pick during the
+  // cascade, then Back (or a reload) before idle, resumed the snapshot from
+  // before the move, and replaying the move earned the same milestone again,
+  // one free charge per cycle.
+  if (cascade && cascade.state !== STATE.IDLE) return;
   if (!powerups.addCharge(slot)) return;
   pendingMilestones--;
   if (pendingMilestones <= 0) milestonePopup = false;
   // The charge is already in storage, but the parked-run snapshot still owes
-  // this milestone. A reload (no exit) or a Back mid-cascade resumes from that
-  // snapshot and re-offered the same milestone, one free charge per cycle.
-  // Mid-cascade picks need nothing: the next idle snapshots the new count.
-  if (cascade?.state === STATE.IDLE) cascade.onIdleReached?.();
+  // this milestone: snapshot now so a reload does not re-offer it.
+  cascade?.onIdleReached?.();
 }
 
 function onRecolorColorPicked(type) {
