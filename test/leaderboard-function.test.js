@@ -252,6 +252,47 @@ describe('onRequestPost', () => {
     expect(stored.some((e) => e.name === 'Slow')).toBe(false);
   });
 
+  describe('one row per name', () => {
+    it('replaces the row when the same name posts a better score', async () => {
+      const kv = makeKV({
+        [`day:${TODAY}`]: JSON.stringify([{ name: 'Ana', score: 300 }, { name: 'Bo', score: 200 }]),
+      });
+      // Case and width differences are the same name.
+      const res = await onRequestPost(postCtx({ name: 'ＡＮＡ', score: 400 }, { kv }));
+      const out = await res.json();
+      expect(out.rank).toBe(1);
+      expect(out.entries).toEqual([{ name: 'ＡＮＡ', score: 400 }, { name: 'Bo', score: 200 }]);
+      expect(JSON.parse(kv.store.get(`day:${TODAY}`))).toEqual(out.entries);
+    });
+
+    it('keeps the better row and writes no board for a score that is not better', async () => {
+      const kv = makeKV({
+        [`day:${TODAY}`]: JSON.stringify([{ name: 'Bo', score: 500 }, { name: 'Ana', score: 300 }]),
+      });
+      const res = await onRequestPost(postCtx({ name: 'ana', score: 300 }, { kv }));
+      expect(res.status).toBe(200);
+      const out = await res.json();
+      expect(out.rank).toBe(2);
+      expect(out.entries).toEqual([{ name: 'Bo', score: 500 }, { name: 'Ana', score: 300 }]);
+      expect(kv.puts.some((p) => p.key.startsWith('day:'))).toBe(false);
+      // The attempt still counts against the daily limit.
+      expect(kv.store.get(`rl:${TODAY}:203.0.113.9`)).toBe('1');
+    });
+
+    it('collapses duplicate names in a board an older version stored', async () => {
+      const kv = makeKV({
+        [`day:${TODAY}`]: JSON.stringify([
+          { name: 'Ana', score: 100 }, { name: 'Bo', score: 250 }, { name: 'ana', score: 300 },
+          { name: 'Ana  Paz', score: 50 }, { name: 'ana paz', score: 40 },
+        ]),
+      });
+      const res = await onRequestGet(getCtx({ kv }));
+      expect((await res.json()).entries).toEqual([
+        { name: 'ana', score: 300 }, { name: 'Bo', score: 250 }, { name: 'Ana  Paz', score: 50 },
+      ]);
+    });
+  });
+
   describe('validation → 400', () => {
     it.each([
       ['missing name', { score: 10 }],
@@ -337,6 +378,53 @@ describe('onRequestPost', () => {
       const res = await onRequestPost(postCtx({ name: 'Bob', score: 10 }, { kv }));
       expect(res.status).toBe(429);
       expect(kv.puts).toHaveLength(0);   // no board write, no counter bump
+    });
+
+    it('counts per UTC day across every posted date the window accepts', async () => {
+      // At 12:00 UTC the ±36h window accepts yesterday, today and tomorrow.
+      // A counter per posted date allowed 3 rows on each: 9 a day per client.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-15T12:00:00Z'));
+      try {
+        const kv = makeKV();
+        for (const date of ['2026-10-14', '2026-10-15', '2026-10-16']) {
+          const res = await onRequestPost(postCtx({ name: `Bob ${date}`, score: 10 }, { kv, date }));
+          expect(res.status).toBe(200);
+        }
+        const fourth = await onRequestPost(postCtx({ name: 'Bob again', score: 10 }, { kv, date: '2026-10-14' }));
+        expect(fourth.status).toBe(429);
+        expect([...kv.store.keys()].filter((k) => k.startsWith('rl:'))).toEqual(['rl:2026-10-15:203.0.113.9']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('buckets an IPv6 client by its /64 prefix', async () => {
+      const kv = makeKV();
+      // Same /64, written three ways (full, compressed, other interface id).
+      const sameNet = ['2001:0db8:0000:0042:0000:0000:0000:0001', '2001:db8:0:42::2', '2001:db8:0:42:abcd::9'];
+      for (const [i, ip] of sameNet.entries()) {
+        const res = await onRequestPost(postCtx({ name: `Six${i}`, score: 10 }, { kv, ip }));
+        expect(res.status).toBe(200);
+      }
+      const rotated = await onRequestPost(postCtx({ name: 'Six3', score: 10 }, { kv, ip: '2001:db8:0:42:ffff::1' }));
+      expect(rotated.status).toBe(429);
+      expect(kv.store.get(`rl:${TODAY}:2001:db8:0:42::/64`)).toBe('3');
+      // Another /64 is another client.
+      const other = await onRequestPost(postCtx({ name: 'Six4', score: 10 }, { kv, ip: '2001:db8:0:43::1' }));
+      expect(other.status).toBe(200);
+    });
+
+    it('buckets an IPv4-mapped IPv6 address as its IPv4 address', async () => {
+      const kv = makeKV({ [`rl:${TODAY}:203.0.113.5`]: '3' });
+      const res = await onRequestPost(postCtx({ name: 'Mapped', score: 10 }, { kv, ip: '::ffff:203.0.113.5' }));
+      expect(res.status).toBe(429);
+    });
+
+    it('buckets a compressed loopback-style IPv6 address', async () => {
+      const kv = makeKV();
+      await onRequestPost(postCtx({ name: 'Loop', score: 10 }, { kv, ip: '::1' }));
+      expect(kv.store.get(`rl:${TODAY}:0:0:0:0::/64`)).toBe('1');
     });
 
     it('falls back to an "unknown" bucket when CF-Connecting-IP is absent', async () => {

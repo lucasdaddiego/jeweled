@@ -57,6 +57,20 @@ describe('leaderboard Pages Function in workerd', () => {
     expect(blocked.status).toBe(429);
   });
 
+  it('keeps one row per name against the real binding', async () => {
+    const post = (name, score) => exports.default.fetch(endpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '2001:db8:7::1' },
+      body: JSON.stringify({ name, score }),
+    });
+    expect((await post('Repeat', 100)).status).toBe(200);
+    expect((await (await post('repeat', 50)).json()).rank).toBe(1);
+    expect((await post('REPEAT', 300)).status).toBe(200);
+    const stored = await env.LEADERBOARD.get(`day:${TODAY}`, 'json');
+    expect(stored).toEqual([{ name: 'REPEAT', score: 300 }]);
+    expect(await env.LEADERBOARD.get(`rl:${new Date().toISOString().slice(0, 10)}:2001:db8:7:0::/64`)).toBe('3');
+  });
+
   it('strips bidi and invisible characters from names in workerd', async () => {
     const post = (name) => exports.default.fetch(endpoint(), {
       method: 'POST',

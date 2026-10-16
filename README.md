@@ -162,8 +162,9 @@ npx wrangler kv namespace create LEADERBOARD
 `wrangler pages deploy dist` picks up `functions/` from the repo root
 automatically. Scores are client-submitted and trivially spoofable — it's a
 friendly hobby leaderboard, not an anti-cheat system (see the honest comment in
-`functions/api/leaderboard/[date].js`). Rate-limited to 3 submissions/day/IP;
-entries expire after 90 days.
+`functions/api/leaderboard/[date].js`). One row per name per day (the best
+score). Rate-limited to 3 submissions per UTC day per client (an IPv4 address
+or an IPv6 /64); entries expire after 90 days.
 
 ## Contributing
 
