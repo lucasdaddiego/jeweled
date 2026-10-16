@@ -43,9 +43,17 @@ function onWheel(e) {
 // onKey(key, shift) returns true when it consumed the key; only then is the
 // browser default (Tab moving focus, Space scrolling) suppressed. Shortcuts
 // with a modifier stay with the browser (Cmd+R, Ctrl+Tab, Alt+Left).
+//
+// A consumed key also stops here. Enter on a focused button can open a
+// dialog, and dialogs.js listens for Enter on window: a listener added during
+// the dispatch still runs when the same event bubbles up to window, so the
+// press that asked "Reset progress?" also answered yes.
 function onKeydown(e) {
   if (e.altKey || e.ctrlKey || e.metaKey) return;
-  if (listeners.onKey && listeners.onKey(e.key, e.shiftKey)) e.preventDefault();
+  if (listeners.onKey && listeners.onKey(e.key, e.shiftKey)) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
 }
 
 export function on(events) {

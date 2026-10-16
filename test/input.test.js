@@ -177,6 +177,34 @@ describe('keyboard', () => {
     expect(onKey).toHaveBeenCalledWith('a', false);
   });
 
+  it('a consumed key does not reach window: Enter that opens a dialog does not also confirm it', async () => {
+    const dialogs = await import('../src/dialogs.js');
+    let answer = 'pending';
+    // Enter on a focused button whose action asks for confirmation.
+    input.on({ onKey: (k) => {
+      if (k !== 'Enter') return false;
+      dialogs.confirm('Reset progress?').then((ok) => { answer = ok; });
+      return true;
+    } });
+    press({ key: 'Enter' });
+    await Promise.resolve();
+    expect(dialogs.isOpen()).toBe(true);
+    expect(answer).toBe('pending');
+    // A second Enter (at window, where dialogs.js listens) is the real answer.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    await Promise.resolve();
+    expect(answer).toBe(true);
+  });
+
+  it('an unconsumed key still bubbles to window', () => {
+    const seen = vi.fn();
+    window.addEventListener('keydown', seen);
+    input.on({ onKey: () => false });
+    press({ key: 'Escape' });
+    window.removeEventListener('keydown', seen);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves modifier shortcuts to the browser and is a no-op without a handler', () => {
     const onKey = vi.fn(() => true);
     input.on({ onKey });
