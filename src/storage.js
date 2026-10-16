@@ -35,6 +35,9 @@ function defaultState() {
       // (result): browser history can re-enter the result scene with the
       // original args, and the date must survive a reload to block a 2nd POST.
       leaderboardSubmittedDate: null,
+      // The counted run of the day, parked (gameDaily): { date, grid, score,
+      // movesLeft, rng, pendingSwap, savedAt }. Null when nothing is parked.
+      saveState: null,
     },
     blitz: {
       bestScore: 0,
@@ -331,8 +334,15 @@ export function exportString() {
   // The Zen gallery (up to 12 JPEG data URLs, 300-400 KB) stays on the
   // device: with it the code outgrew what chat apps paste back intact
   // (Telegram cuts at 4096 chars) and the import then failed with 'parse'.
+  // The parked Daily run stays too: restoring a code taken mid-run would roll
+  // the counted run back to that board (an undo for the score that counts).
+  // Without it, the imported startedDate makes that day a replay.
   const state = load();
-  const portable = { ...state, zen: { ...state.zen, gallery: [] } };
+  const portable = {
+    ...state,
+    zen: { ...state.zen, gallery: [] },
+    daily: { ...state.daily, saveState: null },
+  };
   const bytes = new TextEncoder().encode(JSON.stringify(portable));
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);

@@ -1,9 +1,26 @@
 // Pure helpers for Daily-mode meta UI: streak length, next-daily countdown,
-// a trailing calendar window, and the share blurb. No DOM, no storage —
-// callers hand in the daily.history blob ({ "YYYY-MM-DD": { score, movesUsed } })
-// and get plain data back.
+// a trailing calendar window, the share blurb and the parked-run check. No
+// DOM, no storage — callers hand in the daily.history blob
+// ({ "YYYY-MM-DD": { score, movesUsed } }) or the daily subtree and get plain
+// data back.
 
 import { todayISO } from './rng.js';
+import { DAILY_MOVES, GRID } from './config.js';
+
+// The parked Daily run (daily.saveState, see scenes/gameDaily.js) that can
+// resume on `date`, or null: written for that date and
+// not yet recorded, with a GRID x GRID board, a 1..DAILY_MOVES move budget, a
+// score and an RNG position. A hand-edited value that fails the check is not
+// resumed (the replay rule then applies).
+export function resumableRun(daily, date) {
+  const p = daily?.saveState;
+  if (!p || p.date !== date || daily.todaySubmittedDate === date) return null;
+  if (!Array.isArray(p.grid) || p.grid.length !== GRID) return null;
+  if (!p.grid.every((row) => Array.isArray(row) && row.length === GRID)) return null;
+  if (!Number.isInteger(p.movesLeft) || p.movesLeft < 1 || p.movesLeft > DAILY_MOVES) return null;
+  if (!Number.isFinite(p.score) || !Number.isInteger(p.rng)) return null;
+  return p;
+}
 
 // "YYYY-MM-DD" → local-midnight Date. Never `new Date('YYYY-MM-DD')`: the
 // string form parses as UTC midnight, which lands on the WRONG calendar day

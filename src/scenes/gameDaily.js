@@ -1,4 +1,12 @@
 // Daily challenge: deterministic seed = today's date. 30 moves, no target — just max score.
+//
+// The counted run is parked like Zen: storage daily.saveState holds the board,
+// score, moves left and the RNG position at the last idle, so Back, a reload
+// or a closed tab resumes the same run instead of losing it. A move in flight
+// is parked with the board before it plus the swap itself, and the resume
+// plays that swap again: the outcome of a committed move cannot be undone by
+// leaving mid-cascade. Only the day the run started can resume it: a parked
+// run from an earlier day is dropped (the title and the HUD show today).
 
 import * as render from '../render.js';
 import * as storage from '../storage.js';
@@ -11,11 +19,11 @@ import {
   tickEffects, tickHint, clearEffects, drawHintButton, wireCascadePresentation,
 } from './sceneCommon.js';
 import { Cascade, STATE } from '../cascade.js';
-import { createBoard } from '../grid.js';
+import { createBoard, serializeGrid, deserializeGrid } from '../grid.js';
 import { setScene, clockMs } from '../main.js';
 import { DAILY_MOVES } from '../config.js';
 import { mulberry32, dateHash, todayISO } from '../rng.js';
-import { dailyStreak } from '../dailyMeta.js';
+import { dailyStreak, resumableRun } from '../dailyMeta.js';
 
 let grid = null;
 let cascade = null;
@@ -27,6 +35,20 @@ let resultTriggered = false;
 let isReplay = false;
 let prevBest = 0;
 let dailyDate = '';
+let rng = null;
+// Board at the last idle, as a saveState minus the in-flight move. Kept in
+// memory from the start; written to storage once the counted run has moved.
+let idleSnapshot = null;
+
+function captureIdle() {
+  return {
+    date: dailyDate,
+    grid: serializeGrid(grid),
+    score: cascade.score,
+    movesLeft,
+    rng: rng.state(),
+  };
+}
 
 export function enter(args = {}) {
   document.body.className = 'daily-bg';
@@ -34,42 +56,73 @@ export function enter(args = {}) {
   const today = todayISO();
   dailyDate = today;
   const s = storage.load();
+  const parked = resumableRun(s.daily, today);
+  // A parked run of another day (or a malformed one) is dropped; the replay
+  // rule below still applies to today.
+  if (s.daily.saveState && !parked) storage.saveKey('daily', { saveState: null });
   // A day counts once: after its result was recorded, and also after its
-  // counted run made a move (startedDate). The seed is the date, so a reload
-  // mid-run re-creates the identical board; without the second check that
-  // was an unlimited retry before the score that counts.
-  isReplay = s.daily.todaySubmittedDate === today || s.daily.startedDate === today;
+  // counted run made a move (startedDate) and is not parked. The seed is the
+  // date, so a fresh start re-creates the identical board; without the
+  // second check that was an unlimited retry before the score that counts.
+  isReplay = !parked
+    && (s.daily.todaySubmittedDate === today || s.daily.startedDate === today);
   prevBest = s.daily.bestEver;
 
-  const seed = dateHash();
-  const rng = mulberry32(seed);
-  grid = createBoard(rng);
-  cascade = new Cascade(grid, { mode: 'daily', rng });
+  if (parked) {
+    rng = mulberry32(parked.rng);
+    grid = deserializeGrid(parked.grid);
+    cascade = new Cascade(grid, { mode: 'daily', rng });
+    cascade.score = parked.score;
+    cascade.scoreShown = parked.score;
+  } else {
+    rng = mulberry32(dateHash());
+    grid = createBoard(rng);
+    cascade = new Cascade(grid, { mode: 'daily', rng });
+  }
 
-  movesLeft = DAILY_MOVES;
+  movesLeft = parked ? parked.movesLeft : DAILY_MOVES;
   resultTriggered = false;
   hint = null;
+  idleSnapshot = captureIdle();
   storage.saveKey('profile', { lastPlayedMode: 'daily' });
   drag.bind(grid, cascade);
   debugHud.setActiveCascade(cascade);
-  cascade.playEntryAnimation();
+  if (!parked) cascade.playEntryAnimation();
 
   wireCascadePresentation(cascade, {
     onMoveCommitted: () => {
       movesLeft--;
-      // First committed move of the counted run: mark the day as started so
-      // a reload (or the PWA shortcut) resumes as a replay, not a fresh try.
-      if (!isReplay && movesLeft === DAILY_MOVES - 1) {
-        storage.saveKey('daily', { startedDate: dailyDate });
-      }
+      if (isReplay) return;
+      // Park the board before this move together with the move. Written at
+      // once (flush), not on the debounce: a tab closed while the cascade
+      // runs must not reopen on the old board with the move refunded. The
+      // first move also marks the day as started (see the replay rule).
+      const patch = {
+        saveState: { ...idleSnapshot, pendingSwap: cascade.lastMove, savedAt: new Date().toISOString() },
+      };
+      if (movesLeft === DAILY_MOVES - 1) patch.startedDate = dailyDate;
+      storage.saveKey('daily', patch);
+      storage.flush();
     },
     onIdleReached: () => {
+      idleSnapshot = captureIdle();
       if (movesLeft <= 0 && !resultTriggered) {
         resultTriggered = true;
         finalize();
+        return;
+      }
+      if (!isReplay && !resultTriggered && movesLeft < DAILY_MOVES) {
+        storage.saveKey('daily', {
+          saveState: { ...idleSnapshot, pendingSwap: null, savedAt: new Date().toISOString() },
+        });
       }
     },
   });
+
+  // Resume a move that was in flight when the run was parked: the same swap
+  // on the same board with the same RNG position gives the same outcome.
+  const move = parked?.pendingSwap;
+  if (move?.a && move?.b) cascade.tryStartSwap(move.a, move.b);
 
   wakeLock.acquire();
 }
@@ -87,6 +140,7 @@ function finalize() {
   // for the day it was actually played, with the seed that produced the score.
   if (!isReplay) {
     storage.saveKey('daily', {
+      saveState: null,
       bestEver: Math.max(s.daily.bestEver, cascade.score),
       todaySubmittedDate: dailyDate,
       totalDaysPlayed: s.daily.totalDaysPlayed + 1,

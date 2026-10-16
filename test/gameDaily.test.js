@@ -332,6 +332,170 @@ describe('finalize() on running out of moves', () => {
   });
 });
 
+describe('parking the counted run', () => {
+  // Gem types + specials, the part of the board a resume must reproduce.
+  const shape = (g) => g.map(row => row.map(x => x && `${x.type}:${x.special || ''}`));
+  // Tick until the swap animation ends and the move commits.
+  function untilCommitted(c) {
+    for (let n = 0; !c.lastMove && n < 100; n++) daily.update(16);
+    expect(c.lastMove).toBeTruthy();
+  }
+  // Play the hinted move on the live board and let it settle.
+  function playHint(c) {
+    const h = findModestHint(c.grid);
+    daily.draw();
+    dragSwap(daily, h.a, h.b);
+    runToIdle(daily, c);
+    return h;
+  }
+
+  it('commits park the board before the move plus the swap; idle parks the settled board', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    const before = shape(c.grid);
+    const h = findModestHint(c.grid);
+    daily.draw();
+    dragSwap(daily, h.a, h.b);
+    expect(storage.load().daily.saveState).toBeNull();   // the swap animation is not a move yet
+    untilCommitted(c);
+    // Mid-move: the board before the move, the full budget, and the move.
+    const midMove = storage.load().daily.saveState;
+    expect(midMove).toMatchObject({ date: todayISO(), movesLeft: DAILY_MOVES, score: 0 });
+    expect(midMove.pendingSwap).toEqual({ a: { r: h.a.r, c: h.a.c }, b: { r: h.b.r, c: h.b.c } });
+    expect(shape(midMove.grid)).toEqual(before);
+    runToIdle(daily, c);
+    const settled = storage.load().daily.saveState;
+    expect(settled).toMatchObject({ movesLeft: DAILY_MOVES - 1, score: c.score, rng: c.rng.state(), pendingSwap: null });
+    expect(shape(settled.grid)).toEqual(shape(c.grid));
+  });
+
+  it('commit writes go to localStorage at once, not on the debounce', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    const flush = vi.spyOn(storage, 'flush');
+    c.lastMove = { a: { r: 0, c: 0 }, b: { r: 0, c: 1 } };
+    c.onMoveCommitted();
+    expect(flush).toHaveBeenCalled();
+  });
+
+  it('re-entering resumes the parked run as a counted run, without the entry animation', () => {
+    daily.enter({});
+    let c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c);
+    const score = c.score;
+    const board = shape(c.grid);
+    daily.exit();                                    // Back, or a reload
+    daily.enter({});
+    c = debugHud.activeCascade();
+    expect(c.state).toBe(STATE.IDLE);
+    expect(c.score).toBe(score);
+    expect(c.scoreShown).toBe(score);
+    expect(shape(c.grid)).toEqual(board);
+    const spy = vi.spyOn(render, 'drawText');
+    daily.draw();
+    expect(movesLabel(spy)).toBe(`Moves left: ${DAILY_MOVES - 1}`);
+    expect(spy.mock.calls.some(x => x[0] === 'Replay (does not count)')).toBe(false);
+  });
+
+  it('a resumed run refills exactly like an uninterrupted one (RNG position parked)', () => {
+    daily.enter({});
+    let c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c); playHint(c);
+    const straight = { board: shape(c.grid), score: c.score };
+    daily.exit();
+
+    storage.reset();
+    daily.enter({});
+    c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c);
+    daily.exit();
+    daily.enter({});                                 // resume between the two moves
+    c = debugHud.activeCascade();
+    playHint(c);
+    expect({ board: shape(c.grid), score: c.score }).toEqual(straight);
+  });
+
+  it('leaving mid-move plays the same move again on resume: no undo by reload', () => {
+    daily.enter({});
+    let c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c);
+    const straight = { board: shape(c.grid), score: c.score };
+    daily.exit();
+
+    storage.reset();
+    daily.enter({});
+    c = debugHud.activeCascade(); runToIdle(daily, c);
+    const h = findModestHint(c.grid);
+    daily.draw();
+    dragSwap(daily, h.a, h.b);
+    untilCommitted(c);
+    expect(c.state).not.toBe(STATE.IDLE);
+    daily.exit();                                    // the cascade is still running
+    daily.enter({});
+    c = debugHud.activeCascade();
+    expect(c.state).not.toBe(STATE.IDLE);            // the parked swap is in flight again
+    runToIdle(daily, c);
+    expect({ board: shape(c.grid), score: c.score }).toEqual(straight);
+    const spy = vi.spyOn(render, 'drawText');
+    daily.draw();
+    expect(movesLabel(spy)).toBe(`Moves left: ${DAILY_MOVES - 1}`);
+  });
+
+  it('finalize clears the parked run', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c);
+    expect(storage.load().daily.saveState).not.toBeNull();
+    spendMoves(c, DAILY_MOVES - 1);
+    c.onIdleReached();
+    expect(storage.load().daily.saveState).toBeNull();
+    expect(setScene).toHaveBeenCalledWith('result', expect.objectContaining({ isReplay: false }));
+  });
+
+  it('a replay never parks', () => {
+    storage.saveKey('daily', { todaySubmittedDate: todayISO() });
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c);
+    expect(storage.load().daily.saveState).toBeNull();
+  });
+
+  it('drops a run parked on another day and starts today fresh', () => {
+    const grid = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => ({ type: 0, id: 1 })));
+    storage.saveKey('daily', {
+      startedDate: '2000-01-01',
+      saveState: { date: '2000-01-01', grid, score: 9, movesLeft: 3, rng: 1 },
+    });
+    daily.enter({});
+    const c = debugHud.activeCascade();
+    expect(c.state).toBe(STATE.FALLING);             // a fresh board with its entry animation
+    expect(c.score).toBe(0);
+    expect(storage.load().daily.saveState).toBeNull();
+  });
+
+  it('a malformed parked run is not resumed, and the started day stays a replay', () => {
+    storage.saveKey('daily', {
+      startedDate: todayISO(),
+      saveState: { date: todayISO(), grid: [[1]], score: 9, movesLeft: 3, rng: 1 },
+    });
+    daily.enter({});
+    expect(storage.load().daily.saveState).toBeNull();
+    const spy = vi.spyOn(render, 'drawText');
+    daily.draw();
+    expect(spy.mock.calls.some(x => x[0] === 'Replay (does not count)')).toBe(true);
+  });
+
+  it('a parked run without a pending swap resumes idle', () => {
+    daily.enter({});
+    const c = debugHud.activeCascade(); runToIdle(daily, c);
+    playHint(c);
+    storage.load().daily.saveState.pendingSwap = { a: { r: 0, c: 0 } };   // half a move: ignored
+    daily.exit();
+    daily.enter({});
+    expect(debugHud.activeCascade().state).toBe(STATE.IDLE);
+  });
+});
+
 describe('draw()', () => {
   it('wide: Back button uses the 76px width and shows todayLabel (not a replay)', () => {
     daily.enter({});

@@ -6,7 +6,7 @@ import * as sound from '../sound.js';
 import * as i18n from '../i18n.js';
 import * as dialogs from '../dialogs.js';
 import { todayISO } from '../rng.js';
-import { dailyStreak, msUntilNextDaily, countdownParts } from '../dailyMeta.js';
+import { dailyStreak, msUntilNextDaily, countdownParts, resumableRun } from '../dailyMeta.js';
 import { setScene, invalidate, canInstall, promptInstall } from '../main.js';
 import { NAME_MAX_LEN } from '../config.js';
 import { levelCount } from '../levels.js';
@@ -172,12 +172,16 @@ export function draw() {
       ? { year: 'numeric', month: 'numeric', day: 'numeric' }
       : undefined);
     const submitted = state.daily.todaySubmittedDate === today;
+    const parkedDaily = resumableRun(state.daily, today);
     // Done today → countdown to the next board; otherwise the date, with the
     // running streak appended when there is one worth bragging about.
     let subtitle;
     if (submitted) {
       const parts = countdownParts(msUntilNextDaily());
       subtitle = `${i18n.t('title.dailySubtitleDone', { date: formattedToday })}  ·  ${i18n.t('title.dailyNext', { h: parts.hours, m: parts.minutes })}`;
+    } else if (parkedDaily) {
+      // A parked run: the Daily button resumes it (gameDaily.enter).
+      subtitle = i18n.t('title.dailySubtitleParked', { date: formattedToday, n: parkedDaily.movesLeft });
     } else {
       subtitle = i18n.t('title.dailySubtitle', { date: formattedToday });
       const streak = dailyStreak(state.daily.history || {}, today);

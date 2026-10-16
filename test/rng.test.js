@@ -19,6 +19,16 @@ describe('mulberry32', () => {
     }
   });
 
+  it('state() resumes the stream exactly where it stands', () => {
+    const a = mulberry32(12345);
+    for (let i = 0; i < 7; i++) a();
+    const b = mulberry32(a.state());
+    const restA = Array.from({ length: 5 }, () => a());
+    const restB = Array.from({ length: 5 }, () => b());
+    expect(restB).toEqual(restA);
+    expect(Number.isInteger(a.state()) && a.state() >= 0).toBe(true);
+  });
+
   it('different seeds diverge', () => {
     expect(mulberry32(1)()).not.toBe(mulberry32(2)());
   });

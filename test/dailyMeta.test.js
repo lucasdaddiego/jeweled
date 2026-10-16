@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  dailyStreak, msUntilNextDaily, countdownParts, lastNDays, buildShareText,
+  dailyStreak, msUntilNextDaily, countdownParts, lastNDays, buildShareText, resumableRun,
 } from '../src/dailyMeta.js';
+import { DAILY_MOVES, GRID } from '../src/config.js';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -221,5 +222,33 @@ describe('buildShareText', () => {
     const text = buildShareText({ dateLabel: 'd', score: '1', movesUsed: '9', streak: 0 });
     expect(text.endsWith('\n')).toBe(false);
     expect(text.split('\n')).toHaveLength(2);
+  });
+});
+
+describe('resumableRun', () => {
+  const D = '2026-10-15';
+  const board = () => Array.from({ length: GRID }, () => Array.from({ length: GRID }, () => ({ type: 0, id: 1 })));
+  const run = (over = {}) => ({ date: D, grid: board(), score: 10, movesLeft: 5, rng: 7, ...over });
+
+  it('returns the parked run for its own, unrecorded day', () => {
+    const p = run();
+    expect(resumableRun({ saveState: p }, D)).toBe(p);
+  });
+
+  it.each([
+    ['nothing parked', { saveState: null }],
+    ['no daily subtree', undefined],
+    ['another day', { saveState: run({ date: '2026-10-14' }) }],
+    ['the day was already recorded', { saveState: run(), todaySubmittedDate: D }],
+    ['a grid that is not an array', { saveState: run({ grid: 'x' }) }],
+    ['a grid with the wrong row count', { saveState: run({ grid: board().slice(1) }) }],
+    ['a grid with a short row', { saveState: run({ grid: [...board().slice(1), [1]] }) }],
+    ['no moves left', { saveState: run({ movesLeft: 0 }) }],
+    ['more moves than a day has', { saveState: run({ movesLeft: DAILY_MOVES + 1 }) }],
+    ['a fractional move budget', { saveState: run({ movesLeft: 2.5 }) }],
+    ['a missing score', { saveState: run({ score: undefined }) }],
+    ['a missing RNG position', { saveState: run({ rng: undefined }) }],
+  ])('returns null for %s', (_label, daily) => {
+    expect(resumableRun(daily, D)).toBeNull();
   });
 });

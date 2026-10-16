@@ -57,6 +57,8 @@ export class Cascade {
 
     // Last swap origin (for swap-prefer-spawn-cell)
     this.lastSwapTo = null;
+    // Last committed swap {a, b}, set just before onMoveCommitted.
+    this.lastMove = null;
     // Pending swap (during SWAPPING/REVERTING)
     this._pendingSwap = null;
     this._revertSwap = null;
@@ -377,7 +379,9 @@ export class Cascade {
     }
 
     this._pendingSwap = null;
-    // Valid move — commit it
+    // Valid move — commit it. lastMove lets a scene record the move it just
+    // committed (Daily parks it so a reload replays it, see gameDaily).
+    this.lastMove = { a: { r: a.r, c: a.c }, b: { r: b.r, c: b.c } };
     this.onMoveCommitted?.();
 
     // Bombs tick at this move's first FALL step (see _beginFall), not here:

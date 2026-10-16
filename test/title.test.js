@@ -315,6 +315,18 @@ describe('draw — content branches', () => {
     expect(line[1][0]).toMatch(/Next in \d+h \d+m$/);
   });
 
+  it('Daily subtitle shows the moves left of a parked run', () => {
+    const st = seedName('Ada');
+    const grid = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null));
+    st.daily.saveState = { date: todayISO(), grid, score: 120, movesLeft: 12, rng: 1 };
+    title.enter();
+    title.draw();
+    const ctx = render.ctxRef();
+    const expected = i18n.t('title.dailySubtitleParked', { date: i18n.formatDate(todayISO()), n: 12 });
+    expect(expected).toContain('12 moves left');
+    expect(ctx.__calls.some((c) => c[0] === 'fillText' && c[1][0] === expected)).toBe(true);
+  });
+
   it('Daily subtitle appends the streak when yesterday extended an unbroken run', () => {
     const st = seedName('Ada');
     const day = (back) => { const d = new Date(); d.setDate(d.getDate() - back); return todayISO(d); };

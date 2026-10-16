@@ -1,13 +1,18 @@
 // Seeded RNG (mulberry32) + date-hash helper for Daily mode.
 
+// The returned function carries state(): the 32-bit position in the stream.
+// mulberry32(next.state()) continues exactly where `next` stands, so a parked
+// Daily run resumes with the same refills it would have had.
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function () {
+  const next = function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  next.state = () => a >>> 0;
+  return next;
 }
 
 // xfnv1a-ish string hash → 32-bit seed

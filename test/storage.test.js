@@ -392,6 +392,20 @@ describe('exportString / importString', () => {
     expect(storage.load().zen.bestScore).toBe(5);
   });
 
+  it('leaves the parked Daily run out of the code (no mid-run rollback by import)', async () => {
+    const { storage } = await fresh();
+    const parked = { date: '2026-10-15', grid: [], score: 50, movesLeft: 9, rng: 3 };
+    storage.saveKey('daily', { saveState: parked, startedDate: '2026-10-15' });
+    const code = storage.exportString();
+    const decoded = JSON.parse(atob(code.slice(PREFIX.length)));
+    expect(decoded.daily.saveState).toBeNull();
+    expect(decoded.daily.startedDate).toBe('2026-10-15');    // the import makes the day a replay
+    expect(storage.load().daily.saveState).toEqual(parked);  // the live state is untouched
+    expect(storage.importString(code)).toEqual({ ok: true });
+    expect(storage.load().daily.saveState).toBeNull();
+    expect(storage.load().daily.startedDate).toBe('2026-10-15');
+  });
+
   it('a code that carries a gallery (older export) replaces the device copy', async () => {
     const { storage } = await fresh();
     storage.saveKey('zen', { gallery: [{ dataUrl: 'data:,local', at: 't' }] });
