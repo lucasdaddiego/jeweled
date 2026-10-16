@@ -166,6 +166,23 @@ describe('activate — LIGHTNING', () => {
   });
 });
 
+describe('activate — LIGHTNING with its color gone', () => {
+  it('strikes gems of any color when none of its own is left (CB + lightning swap)', () => {
+    // After the color bomb cleared every type-0 gem, the queued lightning
+    // (type 0) finds no target of its color: it used to hit nothing.
+    const g = fullGrid(1);
+    g[0][0] = null;                           // the lightning's own cell, already cleared
+    g[4][4] = newCell(2, SPECIAL.FIRE);
+    const { cleared } = activate(g, 0, 0, SPECIAL.LIGHTNING, null, mulberry32(3), null, 0);
+    expect(cleared.size).toBe(1 + LIGHTNING_TARGETS);
+    for (const k of cleared) {
+      if (k === key(0, 0)) continue;
+      const [r, c] = k.split(',').map(Number);
+      expect(g[r][c]).not.toBeNull();
+    }
+  });
+});
+
 describe('activate — STAR', () => {
   it('clears the two most common colours plus all wildcards, chaining their specials', () => {
     const g = makeEmptyGrid();

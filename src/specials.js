@@ -146,6 +146,16 @@ export function activate(grid, r, c, special, partnerType = null, rng = Math.ran
           if (cell && cell.type === myType) targets.push({ r: rr, c: cc });
         }
       }
+      // None of its color left: the lightning was cleared together with its
+      // color (a color bomb + lightning swap, a STAR, Color Blast), and used
+      // to strike nothing. It hits gems of any color instead.
+      if (targets.length === 0) {
+        for (let rr = 0; rr < GRID; rr++) {
+          for (let cc = 0; cc < GRID; cc++) {
+            if ((rr !== r || cc !== c) && grid[rr][cc]) targets.push({ r: rr, c: cc });
+          }
+        }
+      }
       // Shuffle, pick first N. Use the cascade's seeded rng so Daily runs are deterministic.
       for (let i = targets.length - 1; i > 0; i--) {
         const j = Math.floor(rng() * (i + 1));
