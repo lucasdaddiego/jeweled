@@ -25,7 +25,7 @@
     "coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.3",
+    "@cloudflare/vitest-plugin": "^1.4.4",
     "@vitest/coverage-v8": "5.0.5",
     "esbuild": "0.28.2",
     "html-minifier-terser": "7.2.0",
