@@ -8,7 +8,7 @@ export default defineConfig({
       miniflare: {
         // Same date as wrangler.jsonc. No compatibilityFlags: nodejs_compat is
         // default from 2026-08-04 and workerd rejects the redundant flag.
-        compatibilityDate: '2026-09-29',
+        compatibilityDate: '2026-10-19',
         kvNamespaces: ['LEADERBOARD'],
       },
     }),
