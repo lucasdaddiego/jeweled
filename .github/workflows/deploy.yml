@@ -32,7 +32,7 @@ jobs:
   # so a coverage/test regression blocks production. The audit is not repeated
   # below: the gate already ran it on this same commit.
   test:
-    uses: ./.github/workflows/test.yml
+    uses: $/.github/workflows/test.yml
 
   bundle:
     needs: test
